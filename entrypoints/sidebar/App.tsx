@@ -3,8 +3,8 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
-import { generateWithGemini, type ToolRegistry, type ToolEvent } from '@/lib/genai'
-import { Type } from '@google/genai'
+import { generateWithGemini, type ToolEvent } from '@/lib/genai'
+import { buildBrowserTools } from '@/lib/tools'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
@@ -121,31 +121,14 @@ export default function Sidebar() {
     stopRequested.current = false
     setStreaming(true)
     try {
-      // Define tools registry (currently only open_tab)
-      const tools: ToolRegistry = {
-        open_tab: {
-          name: 'open_tab',
-          description: 'Open a new browser tab to a given URL (http/https).',
-          parameters: {
-            type: Type.OBJECT,
-            properties: {
-              url: { type: Type.STRING, description: 'Absolute URL to open (http/https).' },
-            },
-            required: ['url'],
-          },
-          handler: async ({ url }) => {
-            if (!autoRunTools) throw new Error('Tool execution disabled by user')
-            try {
-              const u = new URL(String(url))
-              if (!/^https?:$/.test(u.protocol)) throw new Error('Only http/https URLs are allowed')
-            } catch (e: any) {
-              return { ok: false, error: 'Invalid URL' }
-            }
-            const tab = await browser.tabs.create({ url: String(url) })
-            return { ok: true, url: String(url), tabId: tab.id ?? null }
-          },
-        },
-      }
+      // Build tab tools (open/close/switch/navigate/reload)
+      const tools = buildBrowserTools({ autoRun: autoRunTools })
+      // Build conversation history for the model (prior messages + prior tool events)
+      const historyForModel = messages.map((m) => ({
+        role: m.role === 'ai' ? ('model' as const) : ('user' as const),
+        text: m.text,
+        toolEvents: (m as any).toolEvents as any,
+      }))
 
       // Stream text while enabling tool calls via unified method
       const { text, events } = await generateWithGemini(fullPrompt, {
@@ -153,6 +136,36 @@ export default function Sidebar() {
         thinkingEnabled: thinking,
         debug: true,
         tools,
+        history: historyForModel,
+        onToolCall: (ev) => {
+          setMessages((prev) => {
+            const next = [...prev]
+            const last = next[next.length - 1]
+            if (last && last.role === 'ai') {
+              const arr = ((last as any).toolEventsLive ?? []) as any[]
+              ;(last as any).toolEventsLive = [...arr, { ...ev, status: 'calling' }]
+            }
+            return next
+          })
+        },
+        onToolResult: (ev) => {
+          setMessages((prev) => {
+            const next = [...prev]
+            const last = next[next.length - 1]
+            if (last && last.role === 'ai') {
+              const arr = ((last as any).toolEventsLive ?? []) as any[]
+              for (let i = arr.length - 1; i >= 0; i--) {
+                const it = arr[i]
+                if (it.name === ev.name && it.status === 'calling') {
+                  arr[i] = { ...it, ...ev, status: 'done' }
+                  break
+                }
+              }
+              ;(last as any).toolEventsLive = [...arr]
+            }
+            return next
+          })
+        },
         onUpdate: (full) => {
           setMessages((prev) => {
             const next = [...prev]
@@ -213,6 +226,24 @@ export default function Sidebar() {
                   </Collapsible>
                 </div>
               )}
+              {/* Live tool calls and final tool events shown before the AI response */}
+              {m.role === 'ai' && (((m as any).toolEventsLive && (m as any).toolEventsLive.length > 0) || ((m as any).toolEvents && (m as any).toolEvents.length > 0)) && (
+                <div className="mb-1 space-y-1">
+                  {((m as any).toolEventsLive ?? []).map((ev: any, idx: number) => (
+                    <div key={`live-${idx}`} className="text-xs text-muted-foreground">
+                      {ev.status === 'calling'
+                        ? `Calling tool ${ev.name}…`
+                        : `Tool ${ev.name}: ${ev.error ? `Error - ${ev.error}` : 'Success'}`}
+                    </div>
+                  ))}
+                  {((m as any).toolEvents ?? []).map((ev: ToolEvent, idx: number) => (
+                    <div key={`final-${idx}`} className="text-xs text-muted-foreground">
+                      Tool {ev.name}: {ev.error ? `Error - ${ev.error}` : ev.result?.ok ? 'Success' : 'Result'}
+                      {ev.result?.url ? ` — ${ev.result.url}` : ''}
+                    </div>
+                  ))}
+                </div>
+              )}
 
               <div
                 className={
@@ -242,17 +273,6 @@ export default function Sidebar() {
                   {m.text}
                 </ReactMarkdown>
               </div>
-              {/* Tool events (from AI tool calls) */}
-              {m.role === 'ai' && (m as any).toolEvents && (m as any).toolEvents.length > 0 && (
-                <div className="mt-1 space-y-1">
-                  {(m as any).toolEvents.map((ev: ToolEvent, idx: number) => (
-                    <div key={idx} className="text-xs text-muted-foreground">
-                      Tool {ev.name}: {ev.error ? `Error - ${ev.error}` : ev.result?.ok ? 'Success' : 'Result'}
-                      {ev.result?.url ? ` — ${ev.result.url}` : ''}
-                    </div>
-                  ))}
-                </div>
-              )}
               {m.role === 'user' && m.ctxTabs && m.ctxTabs.length > 0 && (
                 <div className="mt-1 flex flex-wrap gap-2">
                   {m.ctxTabs.map((t, idx) => (

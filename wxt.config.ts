@@ -8,6 +8,9 @@ export default defineConfig({
       'tabs',
       'https://generativelanguage.googleapis.com/*'
     ],
+    host_permissions: [
+      "<all_urls>"
+    ],
     // Firefox-native sidebar entry (shows under View → Sidebars)
     sidebar_action: {
       default_title: 'Olive',

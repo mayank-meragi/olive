@@ -17,14 +17,14 @@ export type GenerateOptions = {
   shouldContinue?: () => boolean
   // Optional tools registry; enables streaming tool-calling when provided
   tools?: ToolRegistry
+  // Optional prior conversation to provide full context, including prior tool responses
+  history?: Array<{ role: 'user' | 'ai' | 'model'; text?: string; toolEvents?: ToolEvent[] }>
+  // Live tool-call hooks for UI ordering
+  onToolCall?: (ev: { name: string; args: any }) => void
+  onToolResult?: (ev: { name: string; args: any; result?: any; error?: string }) => void
 }
 
 // Tool calling support
-export type ToolParametersSchema = {
-  type: 'OBJECT'
-  properties: Record<string, { type: 'STRING' | 'NUMBER' | 'BOOLEAN' | 'ARRAY' | 'OBJECT'; description?: string }>
-  required?: string[]
-}
 
 export type ToolHandlerContext = {}
 
@@ -33,7 +33,8 @@ export type ToolHandler = (args: any, ctx: ToolHandlerContext) => Promise<any>
 export type ToolDefinition = {
   name: string
   description?: string
-  parameters: ToolParametersSchema
+  // Parameters schema in SDK's Schema format (use Type.OBJECT, etc.)
+  parameters: any
   handler: ToolHandler
 }
 
@@ -84,6 +85,24 @@ export async function generateWithGemini(
 
   const hasTools = !!opts.tools && Object.keys(opts.tools!).length > 0
 
+  // Build contents from history + current user prompt
+  const contents: any[] = []
+  if (Array.isArray(opts.history) && opts.history.length) {
+    for (const h of opts.history) {
+      const role = h.role === 'user' ? 'user' : 'model'
+      const text = typeof h.text === 'string' ? h.text : ''
+      if (text) contents.push({ role, parts: [{ text }] })
+      if (Array.isArray(h.toolEvents)) {
+        for (const ev of h.toolEvents) {
+          const response = ev?.result ?? (ev?.error ? { ok: false, error: ev.error } : { ok: true })
+          contents.push({ role: 'user', parts: [{ functionResponse: { name: ev.name, response } }] })
+        }
+      }
+    }
+  }
+  // Append the new user turn (the prompt we were given)
+  contents.push({ role: 'user', parts: [{ text: prompt }] })
+
   // Tools path: streaming with tool-calling loop
   if (hasTools) {
     const functionDeclarations = Object.values(opts.tools!).map((t) => ({
@@ -99,7 +118,6 @@ export async function generateWithGemini(
         })))
       } catch {}
     }
-    const contents: any[] = [{ role: 'user', parts: [{ text: prompt }] }]
     const events: ToolEvent[] = []
     let full = ''
     let thoughtsFull = ''
@@ -162,6 +180,7 @@ export async function generateWithGemini(
       for (const call of calls) {
         const name: string = call.name
         const def = opts.tools![name]
+        try { opts.onToolCall?.({ name, args: call.args }) } catch {}
         if (!def) {
           events.push({ name, args: call.args, error: 'Unknown tool' })
           contents.push({ role: 'user', parts: [{ functionResponse: { name, response: { ok: false, error: 'Unknown tool' } } }] })
@@ -173,6 +192,7 @@ export async function generateWithGemini(
           const result = await def.handler(args, {})
           events.push({ name, args, result })
           contents.push({ role: 'user', parts: [{ functionResponse: { name, response: result } }] })
+          try { opts.onToolResult?.({ name, args, result }) } catch {}
           if (opts.debug) {
             try { console.debug('[genai] tool success', { name, args, resultPreview: JSON.stringify(result).slice(0, 200) }) } catch {}
           }
@@ -180,6 +200,7 @@ export async function generateWithGemini(
           const error = e?.message ?? String(e)
           events.push({ name, args, error })
           contents.push({ role: 'user', parts: [{ functionResponse: { name, response: { ok: false, error } } }] })
+          try { opts.onToolResult?.({ name, args, error }) } catch {}
           if (opts.debug) {
             try { console.debug('[genai] tool error', { name, args, error }) } catch {}
           }
