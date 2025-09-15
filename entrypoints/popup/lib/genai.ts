@@ -119,6 +119,7 @@ export async function generateWithGemini(
       } catch {}
     }
     const events: ToolEvent[] = []
+    const executed = new Set<string>()
     let full = ''
     let thoughtsFull = ''
     let safety = 0
@@ -148,22 +149,29 @@ export async function generateWithGemini(
           if (delta) opts.onChunk?.(delta)
           opts.onUpdate?.(full)
         }
-        // Stream-surface function calls if present (typically on the last chunk)
-        if (Array.isArray((chunk as any)?.functionCalls) && (chunk as any).functionCalls.length) {
-          lastFunctionCalls = (chunk as any).functionCalls
-          if (opts.debug) {
-            try {
-              console.debug('[genai] stream functionCalls', lastFunctionCalls.map((c: any) => ({
-                name: c?.name,
-                argsKeys: Object.keys(c?.args ?? {}),
-              })))
-            } catch {}
-          }
+        // Capture only the final chunk's functionCalls: overwrite every chunk
+        const fc = (chunk as any)?.functionCalls
+        lastFunctionCalls = Array.isArray(fc) ? fc : []
+        if (opts.debug && Array.isArray(fc)) {
+          try {
+            console.debug('[genai] stream functionCalls (chunk)', fc.map((c: any) => ({
+              name: c?.name,
+              argsKeys: Object.keys(c?.args ?? {}),
+            })))
+          } catch {}
         }
       }
 
       // Execute tool calls from final chunk
-      const calls = Array.isArray(lastFunctionCalls) ? lastFunctionCalls : []
+      let calls = Array.isArray(lastFunctionCalls) ? lastFunctionCalls : []
+      // Deduplicate identical calls within the same turn (by name+args)
+      const seenTurn = new Set<string>()
+      calls = calls.filter((c: any) => {
+        const key = `${c?.name}|${JSON.stringify(c?.args ?? {})}`
+        if (seenTurn.has(key)) return false
+        seenTurn.add(key)
+        return true
+      })
       if (!calls.length) {
         if (opts.debug) console.debug('[genai] no function calls in final chunk')
         return { text: full, events }
@@ -188,6 +196,11 @@ export async function generateWithGemini(
         }
         let args: any = call.args
         try { if (typeof args === 'string') args = JSON.parse(args) } catch {}
+        const execKey = `${name}|${JSON.stringify(args ?? {})}`
+        if (executed.has(execKey)) {
+          if (opts.debug) console.debug('[genai] skipping duplicate tool call', { name })
+          continue
+        }
         try {
           const result = await def.handler(args, {})
           events.push({ name, args, result })
@@ -196,6 +209,7 @@ export async function generateWithGemini(
           if (opts.debug) {
             try { console.debug('[genai] tool success', { name, args, resultPreview: JSON.stringify(result).slice(0, 200) }) } catch {}
           }
+          executed.add(execKey)
         } catch (e: any) {
           const error = e?.message ?? String(e)
           events.push({ name, args, error })
@@ -204,6 +218,7 @@ export async function generateWithGemini(
           if (opts.debug) {
             try { console.debug('[genai] tool error', { name, args, error }) } catch {}
           }
+          executed.add(execKey)
         }
       }
       // Loop for potential follow-up generation after tool responses
