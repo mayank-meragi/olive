@@ -3,7 +3,8 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
-import { generateWithGemini } from '@/lib/genai'
+import { generateWithGemini, type ToolRegistry, type ToolEvent } from '@/lib/genai'
+import { Type } from '@google/genai'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
@@ -20,6 +21,7 @@ export default function Sidebar() {
   const [thinking, setThinking] = useState<boolean>(false)
   const stopRequested = useRef(false)
   const [streaming, setStreaming] = useState(false)
+  const [autoRunTools, setAutoRunTools] = useState(true)
   const textareaRef = useRef<HTMLTextAreaElement | null>(null)
   const [tabPickerOpen, setTabPickerOpen] = useState(false)
   const [allTabs, setAllTabs] = useState<Array<browser.tabs.Tab>>([])
@@ -119,10 +121,39 @@ export default function Sidebar() {
     stopRequested.current = false
     setStreaming(true)
     try {
-      await generateWithGemini(fullPrompt, {
-        stream: true,
+      // Define tools registry (currently only open_tab)
+      const tools: ToolRegistry = {
+        open_tab: {
+          name: 'open_tab',
+          description: 'Open a new browser tab to a given URL (http/https).',
+          parameters: {
+            type: Type.OBJECT,
+            properties: {
+              url: { type: Type.STRING, description: 'Absolute URL to open (http/https).' },
+            },
+            required: ['url'],
+          },
+          handler: async ({ url }) => {
+            if (!autoRunTools) throw new Error('Tool execution disabled by user')
+            try {
+              const u = new URL(String(url))
+              if (!/^https?:$/.test(u.protocol)) throw new Error('Only http/https URLs are allowed')
+            } catch (e: any) {
+              return { ok: false, error: 'Invalid URL' }
+            }
+            const tab = await browser.tabs.create({ url: String(url) })
+            return { ok: true, url: String(url), tabId: tab.id ?? null }
+          },
+        },
+      }
+
+      // Stream text while enabling tool calls via unified method
+      const { text, events } = await generateWithGemini(fullPrompt, {
+        model,
+        thinkingEnabled: thinking,
+        debug: true,
+        tools,
         onUpdate: (full) => {
-          // Replace last message text with the full accumulated text to avoid any duplication
           setMessages((prev) => {
             const next = [...prev]
             const last = next[next.length - 1]
@@ -138,10 +169,14 @@ export default function Sidebar() {
             return next
           })
         },
-        model,
-        thinkingEnabled: thinking,
-        debug: true,
         shouldContinue: () => !stopRequested.current,
+      })
+      // Attach tool events after streaming completes
+      setMessages((prev) => {
+        const next = [...prev]
+        const last = next[next.length - 1]
+        if (last && last.role === 'ai') (last as any).toolEvents = events as ToolEvent[]
+        return next
       })
     } catch (e: any) {
       setMessages((prev) => [...prev, { role: 'ai', text: `Error: ${e?.message ?? e}` }])
@@ -207,6 +242,17 @@ export default function Sidebar() {
                   {m.text}
                 </ReactMarkdown>
               </div>
+              {/* Tool events (from AI tool calls) */}
+              {m.role === 'ai' && (m as any).toolEvents && (m as any).toolEvents.length > 0 && (
+                <div className="mt-1 space-y-1">
+                  {(m as any).toolEvents.map((ev: ToolEvent, idx: number) => (
+                    <div key={idx} className="text-xs text-muted-foreground">
+                      Tool {ev.name}: {ev.error ? `Error - ${ev.error}` : ev.result?.ok ? 'Success' : 'Result'}
+                      {ev.result?.url ? ` — ${ev.result.url}` : ''}
+                    </div>
+                  ))}
+                </div>
+              )}
               {m.role === 'user' && m.ctxTabs && m.ctxTabs.length > 0 && (
                 <div className="mt-1 flex flex-wrap gap-2">
                   {m.ctxTabs.map((t, idx) => (
@@ -413,6 +459,10 @@ export default function Sidebar() {
           <div className="flex items-center gap-2">
             <span className="text-xs text-muted-foreground">Thinking</span>
             <Switch checked={thinking} onCheckedChange={(v) => setThinking(Boolean(v))} />
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-muted-foreground">Auto-run tools</span>
+            <Switch checked={autoRunTools} onCheckedChange={(v) => setAutoRunTools(Boolean(v))} />
           </div>
         </div>
       </form>
