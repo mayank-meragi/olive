@@ -10,8 +10,10 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/component
 import { Popover, PopoverContent, PopoverAnchor } from '@/components/ui/popover'
 import { ArrowUp, Square } from 'lucide-react'
 
+type TabCtx = { id?: number; title?: string; url?: string; favIconUrl?: string }
+
 export default function Sidebar() {
-  const [messages, setMessages] = useState<Array<{ role: 'user' | 'ai'; text: string; thinking?: string }>>([])
+  const [messages, setMessages] = useState<Array<{ role: 'user' | 'ai'; text: string; thinking?: string; ctxTabs?: TabCtx[] }>>([])
   const [draft, setDraft] = useState('')
   const listRef = useRef<HTMLDivElement | null>(null)
   const [model, setModel] = useState<string>('gemini-2.5-flash')
@@ -105,7 +107,8 @@ export default function Sidebar() {
     const fullPrompt = prompt + contextBlock
     // Optimistically add user message and an empty AI bubble we will fill by replacing text
     // Show only the typed text in the chat; context is appended only for the model
-    setMessages((prev) => [...prev, { role: 'user', text: prompt }, { role: 'ai', text: '' }])
+    const ctxTabsSummary: TabCtx[] = selectedTabs.map((t) => ({ id: t.id, title: t.title, url: t.url, favIconUrl: t.favIconUrl }))
+    setMessages((prev) => [...prev, { role: 'user', text: prompt, ctxTabs: ctxTabsSummary }, { role: 'ai', text: '' }])
     stopRequested.current = false
     setStreaming(true)
     try {
@@ -197,6 +200,21 @@ export default function Sidebar() {
                   {m.text}
                 </ReactMarkdown>
               </div>
+              {m.role === 'user' && m.ctxTabs && m.ctxTabs.length > 0 && (
+                <div className="mt-1 flex flex-wrap gap-2">
+                  {m.ctxTabs.map((t, idx) => (
+                    <div key={(t.id ?? idx) + (t.url ?? '')} className="flex items-center gap-2 rounded-md border bg-muted px-2 py-1 text-xs">
+                      {t.favIconUrl ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img src={t.favIconUrl} alt="" className="h-3 w-3" />
+                      ) : (
+                        <div className="h-3 w-3 rounded-sm bg-background" />
+                      )}
+                      <span className="max-w-[200px] truncate">{t.title ?? 'Untitled'}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           ))
         )}
