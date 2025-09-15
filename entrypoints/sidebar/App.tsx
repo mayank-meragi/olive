@@ -58,6 +58,13 @@ export default function Sidebar() {
     setTimeout(() => searchRef.current?.focus(), 0)
   }, [tabPickerOpen])
 
+  // When tab picker closes, return focus to the textarea
+  useEffect(() => {
+    if (tabPickerOpen) return
+    const id = setTimeout(() => textareaRef.current?.focus(), 0)
+    return () => clearTimeout(id)
+  }, [tabPickerOpen])
+
   const filteredTabs = useMemo(() => {
     const q = tabQuery.trim().toLowerCase()
     if (!q) return allTabs
