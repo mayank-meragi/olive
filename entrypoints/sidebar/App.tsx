@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react'
+import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
@@ -7,6 +7,7 @@ import { generateWithGemini } from '@/lib/genai'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
+import { Popover, PopoverContent, PopoverAnchor } from '@/components/ui/popover'
 import { ArrowUp, Square } from 'lucide-react'
 
 export default function Sidebar() {
@@ -17,6 +18,14 @@ export default function Sidebar() {
   const [thinking, setThinking] = useState<boolean>(false)
   const stopRequested = useRef(false)
   const [streaming, setStreaming] = useState(false)
+  const textareaRef = useRef<HTMLTextAreaElement | null>(null)
+  const [tabPickerOpen, setTabPickerOpen] = useState(false)
+  const [allTabs, setAllTabs] = useState<Array<browser.tabs.Tab>>([])
+  const [selectedTabIds, setSelectedTabIds] = useState<Set<number>>(new Set())
+  const [tabQuery, setTabQuery] = useState('')
+  const [highlightIndex, setHighlightIndex] = useState(0)
+  const searchRef = useRef<HTMLInputElement | null>(null)
+  const tabListRef = useRef<HTMLDivElement | null>(null)
 
   useEffect(() => {
     listRef.current?.scrollTo({ top: listRef.current.scrollHeight, behavior: 'smooth' })
@@ -30,6 +39,53 @@ export default function Sidebar() {
     })()
   }, [])
 
+  // Load tabs when the popover opens
+  useEffect(() => {
+    if (!tabPickerOpen) return
+    ;(async () => {
+      try {
+        const tabs = await browser.tabs.query({})
+        setAllTabs(tabs)
+      } catch (err) {
+        // ignore
+      }
+    })()
+    // Reset search and highlight and focus the search box
+    setTabQuery('')
+    setHighlightIndex(0)
+    setTimeout(() => searchRef.current?.focus(), 0)
+  }, [tabPickerOpen])
+
+  const filteredTabs = useMemo(() => {
+    const q = tabQuery.trim().toLowerCase()
+    if (!q) return allTabs
+    return allTabs.filter((t) =>
+      (t.title ?? '').toLowerCase().includes(q) || (t.url ?? '').toLowerCase().includes(q),
+    )
+  }, [allTabs, tabQuery])
+
+  useEffect(() => {
+    // Keep highlightIndex within bounds when filtering
+    if (highlightIndex > Math.max(0, filteredTabs.length - 1)) {
+      setHighlightIndex((i) => Math.min(i, Math.max(0, filteredTabs.length - 1)))
+    }
+  }, [filteredTabs.length, highlightIndex])
+
+  useEffect(() => {
+    // Ensure highlighted item is visible
+    const el = tabListRef.current?.querySelector(`[data-idx="${highlightIndex}"]`) as HTMLElement | null
+    el?.scrollIntoView({ block: 'nearest' })
+  }, [highlightIndex])
+
+  // Auto-resize the textarea as the user types, up to a max height
+  useEffect(() => {
+    const el = textareaRef.current
+    if (!el) return
+    el.style.height = 'auto'
+    const max = 160 // px ~ max-h-40
+    el.style.height = Math.min(el.scrollHeight, max) + 'px'
+  }, [draft])
+
   useEffect(() => {
     void browser.storage.local.set({ oliveModel: model })
   }, [model])
@@ -38,12 +94,22 @@ export default function Sidebar() {
   }, [thinking])
 
   async function send(prompt: string) {
+    // Build context block from selected tabs
+    const selectedTabs = allTabs.filter((t) => (t.id ? selectedTabIds.has(t.id) : false))
+    const contextBlock = selectedTabs.length
+      ? '\n\n[Context Tabs]\n' +
+        selectedTabs
+          .map((t, i) => `- ${t.title ?? 'Untitled'}${t.url ? ` (${t.url})` : ''}`)
+          .join('\n')
+      : ''
+    const fullPrompt = prompt + contextBlock
     // Optimistically add user message and an empty AI bubble we will fill by replacing text
+    // Show only the typed text in the chat; context is appended only for the model
     setMessages((prev) => [...prev, { role: 'user', text: prompt }, { role: 'ai', text: '' }])
     stopRequested.current = false
     setStreaming(true)
     try {
-      await generateWithGemini(prompt, {
+      await generateWithGemini(fullPrompt, {
         stream: true,
         onUpdate: (full) => {
           // Replace last message text with the full accumulated text to avoid any duplication
@@ -71,6 +137,8 @@ export default function Sidebar() {
       setMessages((prev) => [...prev, { role: 'ai', text: `Error: ${e?.message ?? e}` }])
     } finally {
       setStreaming(false)
+      // Clear selection after sending
+      setSelectedTabIds(new Set())
     }
   }
 
@@ -144,17 +212,125 @@ export default function Sidebar() {
         }}
       >
         <div className="flex gap-2">
-          <Input
-            placeholder="Ask anything..."
-            value={draft}
-            onChange={(e) => setDraft(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
-                e.preventDefault()
-                if (!streaming) (e.currentTarget.form as HTMLFormElement | null)?.requestSubmit()
-              }
-            }}
-          />
+          <Popover open={tabPickerOpen} onOpenChange={setTabPickerOpen}>
+            <PopoverAnchor asChild>
+              <textarea
+                ref={textareaRef}
+                placeholder="Ask anything... Press @ to add tabs"
+                value={draft}
+                onChange={(e) => setDraft(e.target.value)}
+                onKeyDown={(e) => {
+                  // Open tab picker on '@'
+                  if (e.key === '@') {
+                    e.preventDefault()
+                    setTabPickerOpen(true)
+                    return
+                  }
+                  // Submit on Cmd/Ctrl+Enter; allow Enter for newlines
+                  if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+                    e.preventDefault()
+                    if (!streaming) (e.currentTarget.form as HTMLFormElement | null)?.requestSubmit()
+                  }
+                }}
+                rows={1}
+                className="flex w-full min-h-[36px] max-h-40 resize-none overflow-y-auto rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 disabled:cursor-not-allowed disabled:opacity-50"
+              />
+            </PopoverAnchor>
+            <PopoverContent className="w-[360px] p-0" onOpenAutoFocus={(e) => e.preventDefault()}>
+              <div className="p-2 pb-0">
+                <Input
+                  ref={searchRef}
+                  placeholder="Search tabs by title or URL"
+                  value={tabQuery}
+                  onChange={(e) => setTabQuery(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'ArrowDown') {
+                      e.preventDefault()
+                      setHighlightIndex((i) => Math.min(i + 1, Math.max(0, filteredTabs.length - 1)))
+                    } else if (e.key === 'ArrowUp') {
+                      e.preventDefault()
+                      setHighlightIndex((i) => Math.max(i - 1, 0))
+                    } else if (e.key === 'Enter') {
+                      e.preventDefault()
+                      const t = filteredTabs[highlightIndex]
+                      const id = t?.id ?? -1
+                      if (id !== -1) {
+                        setSelectedTabIds((prev) => {
+                          const next = new Set(prev)
+                          if (next.has(id)) next.delete(id)
+                          else next.add(id)
+                          return next
+                        })
+                      }
+                    } else if (e.key === 'Escape') {
+                      e.preventDefault()
+                      setTabPickerOpen(false)
+                    }
+                  }}
+                  className="h-8"
+                />
+              </div>
+              <div ref={tabListRef} className="max-h-64 overflow-auto p-2 pt-1">
+                <div className="mb-2 px-1 text-xs text-muted-foreground">Add tabs as context</div>
+                {filteredTabs.length === 0 ? (
+                  <div className="px-2 py-4 text-center text-xs text-muted-foreground">No tabs found</div>
+                ) : (
+                  filteredTabs.map((t, i) => {
+                    const id = t.id ?? -1
+                    const selected = id !== -1 && selectedTabIds.has(id)
+                    const highlighted = i === highlightIndex
+                    return (
+                      <button
+                        key={id + (t.url ?? '')}
+                        type="button"
+                        className={
+                          'flex w-full items-center gap-2 rounded px-2 py-1 text-left text-sm hover:bg-accent ' +
+                          (selected ? 'bg-accent ' : '') +
+                          (highlighted ? 'outline outline-1 outline-primary' : '')
+                        }
+                        data-idx={i}
+                        onClick={() => {
+                          if (id === -1) return
+                          setSelectedTabIds((prev) => {
+                            const next = new Set(prev)
+                            if (next.has(id)) next.delete(id)
+                            else next.add(id)
+                            return next
+                          })
+                        }}
+                        onMouseEnter={() => setHighlightIndex(i)}
+                      >
+                        {/* Favicon */}
+                        {t.favIconUrl ? (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img src={t.favIconUrl} alt="" className="h-4 w-4 shrink-0" />
+                        ) : (
+                          <div className="h-4 w-4 shrink-0 rounded-sm bg-muted" />
+                        )}
+                        <div className="min-w-0 flex-1">
+                          <div className="truncate font-medium">{t.title ?? 'Untitled'}</div>
+                          <div className="truncate text-xs text-muted-foreground">{t.url ?? ''}</div>
+                        </div>
+                        {selected ? (
+                          <span className="text-xs text-primary">Added</span>
+                        ) : (
+                          <span className="text-xs text-muted-foreground">Add</span>
+                        )}
+                      </button>
+                    )
+                  })
+                )}
+              </div>
+              <div className="flex items-center justify-between border-t p-2">
+                <div className="text-xs text-muted-foreground">
+                  {selectedTabIds.size} selected
+                </div>
+                <Button type="button" size="sm" onClick={() => setTabPickerOpen(false)}>
+                  Done
+                </Button>
+              </div>
+            </PopoverContent>
+          </Popover>
           {streaming ? (
             <Button type="button" size="icon" onClick={() => (stopRequested.current = true)} title="Stop">
               <Square className="h-4 w-4" />
@@ -165,6 +341,37 @@ export default function Sidebar() {
             </Button>
           )}
         </div>
+        {selectedTabIds.size > 0 && (
+          <div className="mt-2 flex flex-wrap gap-2">
+            {allTabs
+              .filter((t) => (t.id ? selectedTabIds.has(t.id) : false))
+              .map((t) => (
+                <div key={t.id} className="flex items-center gap-2 rounded-md border bg-muted px-2 py-1 text-xs">
+                  {t.favIconUrl ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img src={t.favIconUrl} alt="" className="h-3 w-3" />
+                  ) : (
+                    <div className="h-3 w-3 rounded-sm bg-background" />
+                  )}
+                  <span className="max-w-[200px] truncate">{t.title ?? 'Untitled'}</span>
+                  <button
+                    type="button"
+                    className="ml-1 text-muted-foreground hover:text-foreground"
+                    onClick={() => {
+                      if (t.id == null) return
+                      setSelectedTabIds((prev) => {
+                        const next = new Set(prev)
+                        next.delete(t.id as number)
+                        return next
+                      })
+                    }}
+                  >
+                    ×
+                  </button>
+                </div>
+              ))}
+          </div>
+        )}
         <div className="mt-2 flex items-center justify-between gap-2">
           <div className="flex w-[70%] items-center gap-2">
             <span className="text-xs text-muted-foreground">Model</span>
