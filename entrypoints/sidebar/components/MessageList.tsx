@@ -1,26 +1,32 @@
 import React from 'react'
-import type { ChatMessage } from '../types'
-import { ToolEvents } from './ToolEvents'
+import type { ChatEntry } from '../types'
 import { MessageItem } from './MessageItem'
+import { ThinkingItem } from './ThinkingItem'
+import { ToolEventItem } from './ToolEventItem'
 
-export function MessageList({ messages, thinking }: { messages: ChatMessage[]; thinking: boolean }) {
+export function MessageList({ messages }: { messages: ChatEntry[] }) {
   if (messages.length === 0) {
     return (
-      <div className="text-center text-xs text-muted-foreground">Ask anything to start chatting.</div>
+      <div className="text-center text-xs text-muted-foreground">
+        Ask anything to start chatting.
+      </div>
     )
   }
   return (
     <>
-      {messages.map((m, i) => (
-        <div key={i}>
-          {/* Tool events above AI response if present */}
-          {m.role === 'ai' && (
-            <ToolEvents live={(m as any).toolEventsLive} final={(m as any).toolEvents} />
-          )}
-          <MessageItem m={{ ...m, thinking: m.role === 'ai' && thinking ? m.thinking : undefined }} />
-        </div>
-      ))}
+      {messages.map((entry) => {
+        switch (entry.kind) {
+          case 'user':
+          case 'ai':
+            return <MessageItem key={entry.id} entry={entry} />
+          case 'thinking':
+            return <ThinkingItem key={entry.id} entry={entry} />
+          case 'tool':
+            return <ToolEventItem key={entry.id} entry={entry} />
+          default:
+            return null
+        }
+      })}
     </>
   )
 }
-

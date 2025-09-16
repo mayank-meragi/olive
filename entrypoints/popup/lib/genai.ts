@@ -186,10 +186,14 @@ const applyThoughtChunk = (
 
   if (signaturelessParts.length) {
     const joined = signaturelessParts.join("")
-    const { delta, full } = computeDelta(state.signaturelessFull, joined)
+    const prev = state.signaturelessFull
+    const { delta, full } = computeDelta(prev, joined)
     state.signaturelessFull = full
     if (typeof delta === "string" && delta.length) {
       deltaAggregate += delta
+    } else if (!prev && full) {
+      // First segment without identifiable signature; treat as initial chunk
+      deltaAggregate += full
     }
   }
 
@@ -371,9 +375,11 @@ export async function generateWithGemini(
     )
     const events: ToolEvent[] = []
     const executed = new Set<string>()
-    const state = createStreamState()
     let iterations = 0
+    let lastState = createStreamState()
     while (iterations++ < 8) {
+      const state = createStreamState()
+      lastState = state
       tryDebug(opts.debug, "[genai] streaming turn", { iteration: iterations })
       const { interrupted, functionCalls } = await streamOnce({
         ai,
@@ -387,7 +393,7 @@ export async function generateWithGemini(
         state,
         label: "[genai] stream chunk",
       })
-      if (interrupted) break
+      if (interrupted) return { text: state.text, events }
 
       // Execute tool calls from final chunk
       let calls = Array.isArray(functionCalls) ? functionCalls : []
@@ -476,7 +482,7 @@ export async function generateWithGemini(
       }
       // Loop for potential follow-up generation after tool responses
     }
-    return { text: state.text, events }
+    return { text: lastState.text, events }
   }
 
   if (opts.stream) {

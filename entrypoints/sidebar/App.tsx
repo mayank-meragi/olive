@@ -14,10 +14,16 @@ import { useScrollToBottom } from "./hooks/useScrollToBottom"
 import { useTextareaAutoResize } from "./hooks/useTextareaAutoResize"
 import { useStorageSync } from "./hooks/useStorageSync"
 import { runChat } from "./lib/chatService"
-import type { ChatMessage, TabCtx } from "./types"
+import type { ToolEvent } from "@/lib/genai"
+import type { ChatEntry, TabCtx, ToolTimelineEntry } from "./types"
+
+const makeId = (() => {
+  let counter = 0
+  return () => `${Date.now().toString(36)}-${(counter++).toString(36)}`
+})()
 
 export default function Sidebar() {
-  const [messages, setMessages] = useState<ChatMessage[]>([])
+  const [messages, setMessages] = useState<ChatEntry[]>([])
   const [draft, setDraft] = useState("")
   const listRef = useRef<HTMLDivElement | null>(null)
   const [model, setModel] = useStorageSync<string>("oliveModel", "gemini-2.5-flash")
@@ -29,17 +35,12 @@ export default function Sidebar() {
   const [tabPickerOpen, setTabPickerOpen] = useState(false)
   const [allTabs, setAllTabs] = useState<Array<browser.tabs.Tab>>([])
   const [selectedTabIds, setSelectedTabIds] = useState<Set<number>>(new Set())
+  const lastAiIdRef = useRef<string | null>(null)
+  const pendingToolIdsRef = useRef<string[]>([])
+
   useScrollToBottom(listRef, messages.length)
   useTextareaAutoResize(textareaRef, draft)
 
-  // When tab picker closes, return focus to the textarea
-  useEffect(() => {
-    if (tabPickerOpen) return
-    const id = setTimeout(() => textareaRef.current?.focus(), 0)
-    return () => clearTimeout(id)
-  }, [tabPickerOpen])
-
-  // When tab picker closes, return focus to the textarea
   useEffect(() => {
     if (tabPickerOpen) return
     const id = setTimeout(() => textareaRef.current?.focus(), 0)
@@ -47,7 +48,6 @@ export default function Sidebar() {
   }, [tabPickerOpen])
 
   async function send(prompt: string) {
-    // Build context block from selected tabs
     const selectedTabs = allTabs.filter((t) =>
       t.id ? selectedTabIds.has(t.id) : false
     )
@@ -60,29 +60,36 @@ export default function Sidebar() {
           .join("\n")
       : ""
     const fullPrompt = prompt + contextBlock
-    // Optimistically add user message and an empty AI bubble we will fill by replacing text
-    // Show only the typed text in the chat; context is appended only for the model
     const ctxTabsSummary: TabCtx[] = selectedTabs.map((t) => ({
       id: t.id,
       title: t.title,
       url: t.url,
       favIconUrl: t.favIconUrl,
     }))
-    setMessages((prev) => [
-      ...prev,
-      { role: "user", text: prompt, ctxTabs: ctxTabsSummary },
-      { role: "ai", text: "" },
-    ])
+
+    const historyForModel = messages.reduce<
+      Array<{ role: "user" | "model"; text?: string; toolEvents?: ToolEvent[] }>
+    >((acc, entry) => {
+      if (entry.kind === "user") acc.push({ role: "user", text: entry.text })
+      if (entry.kind === "ai")
+        acc.push({ role: "model", text: entry.text, toolEvents: entry.toolEvents })
+      return acc
+    }, [])
+
+    const userEntry: ChatEntry = {
+      id: makeId(),
+      kind: "user",
+      text: prompt,
+      ctxTabs: ctxTabsSummary,
+    }
+    setMessages((prev) => [...prev, userEntry])
+
     stopRequested.current = false
     setStreaming(true)
-    try {
-      // Build conversation history for the model (prior messages + prior tool events)
-      const historyForModel = messages.map((m) => ({
-        role: m.role === "ai" ? ("model" as const) : ("user" as const),
-        text: m.text,
-        toolEvents: (m as any).toolEvents as any,
-      }))
+    lastAiIdRef.current = null
+    pendingToolIdsRef.current = []
 
+    try {
       const { events } = await runChat({
         prompt: fullPrompt,
         model,
@@ -91,68 +98,115 @@ export default function Sidebar() {
         history: historyForModel,
         callbacks: {
           onToolCall: (ev) => {
-            setMessages((prev) => {
-              const next = [...prev]
-              const last = next[next.length - 1]
-              if (last && last.role === "ai") {
-                const arr = ((last as any).toolEventsLive ?? []) as any[]
-                ;(last as any).toolEventsLive = [...arr, { ...ev, status: "calling" }]
-              }
-              return next
-            })
+            const toolId = makeId()
+            pendingToolIdsRef.current.push(toolId)
+            setMessages((prev) => [
+              ...prev,
+              {
+                id: toolId,
+                kind: "tool",
+                name: ev.name,
+                args: ev.args,
+                status: "calling",
+              } satisfies ToolTimelineEntry,
+            ])
           },
           onToolResult: (ev) => {
             setMessages((prev) => {
               const next = [...prev]
-              const last = next[next.length - 1]
-              if (last && last.role === "ai") {
-                const arr = ((last as any).toolEventsLive ?? []) as any[]
-                for (let i = arr.length - 1; i >= 0; i--) {
-                  const it = arr[i]
-                  if (it.name === ev.name && it.status === "calling") {
-                    arr[i] = { ...it, ...ev, status: "done" }
-                    break
+              let toolId = pendingToolIdsRef.current.shift()
+              if (toolId) {
+                const idx = next.findIndex((entry) => entry.id === toolId)
+                if (idx >= 0 && next[idx]?.kind === "tool") {
+                  const entry = next[idx] as ToolTimelineEntry
+                  next[idx] = {
+                    ...entry,
+                    status: "done",
+                    result: ev.result,
+                    error: ev.error,
                   }
+                  return next
                 }
-                ;(last as any).toolEventsLive = [...arr]
               }
+              next.push({
+                id: makeId(),
+                kind: "tool",
+                name: ev.name,
+                args: ev.args,
+                status: "done",
+                result: ev.result,
+                error: ev.error,
+              })
               return next
             })
           },
           onUpdate: (full) => {
             setMessages((prev) => {
+              if (!full) return prev
               const next = [...prev]
               const last = next[next.length - 1]
-              if (last && last.role === "ai") last.text = full
-              return next
+              if (last && last.kind === "ai") {
+                next[next.length - 1] = { ...last, text: full }
+                lastAiIdRef.current = last.id
+                return next
+              }
+              const id = makeId()
+              lastAiIdRef.current = id
+              return [
+                ...next,
+                {
+                  id,
+                  kind: "ai",
+                  text: full,
+                },
+              ]
             })
           },
           onThinkingUpdate: (tfull) => {
+            if (!tfull) return
             setMessages((prev) => {
               const next = [...prev]
               const last = next[next.length - 1]
-              if (last && last.role === "ai") last.thinking = tfull
-              return next
+              if (last && last.kind === "thinking") {
+                next[next.length - 1] = { ...last, text: tfull }
+                return next
+              }
+              return [
+                ...next,
+                { id: makeId(), kind: "thinking", text: tfull },
+              ]
             })
           },
           shouldContinue: () => !stopRequested.current,
         },
       })
-      // Attach tool events after streaming completes
       setMessages((prev) => {
+        const aiId = lastAiIdRef.current
+        if (!aiId) return prev
+        const idx = prev.findIndex((entry) => entry.id === aiId)
+        if (idx === -1 || prev[idx]?.kind !== "ai") return prev
         const next = [...prev]
-        const last = next[next.length - 1]
-        if (last && last.role === "ai") (last as any).toolEvents = events
+        next[idx] = { ...next[idx], toolEvents: events }
         return next
       })
     } catch (e: any) {
-      setMessages((prev) => [
-        ...prev,
-        { role: "ai", text: `Error: ${e?.message ?? e}` },
-      ])
+      setMessages((prev) => {
+        const aiId = lastAiIdRef.current
+        const message = `Error: ${e?.message ?? e}`
+        if (aiId) {
+          const idx = prev.findIndex((entry) => entry.id === aiId)
+          if (idx >= 0 && prev[idx]?.kind === "ai") {
+            const next = [...prev]
+            next[idx] = { ...next[idx], text: message }
+            return next
+          }
+        }
+        const newId = makeId()
+        lastAiIdRef.current = newId
+        return [...prev, { id: newId, kind: "ai", text: message }]
+      })
     } finally {
       setStreaming(false)
-      // Clear selection after sending
       setSelectedTabIds(new Set())
     }
   }
@@ -163,7 +217,7 @@ export default function Sidebar() {
         <div className="text-sm font-medium">Olive — AI Sidebar</div>
       </div>
       <div ref={listRef} className="flex-1 space-y-2 overflow-auto p-3">
-        <MessageList messages={messages} thinking={thinking} />
+        <MessageList messages={messages} />
       </div>
       <form
         className="sticky bottom-0 border-t bg-background p-2"
