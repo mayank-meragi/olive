@@ -1,12 +1,32 @@
 import type { ToolEvent } from "@/lib/genai"
 import { useCallback, useEffect, useRef, useState } from "react"
 import { runChat } from "../lib/chatService"
-import type { ChatEntry, TabCtx, ToolTimelineEntry } from "../types"
+import type {
+  ChatEntry,
+  Conversation,
+  TabCtx,
+  ToolTimelineEntry,
+} from "../types"
 import { useScrollToBottom } from "./useScrollToBottom"
 import { useStorageSync } from "./useStorageSync"
 import { useTextareaAutoResize } from "./useTextareaAutoResize"
 
 type PendingTool = { id: string; name: string }
+
+const DEFAULT_CONVERSATION_TITLE = "New Chat"
+
+function deriveConversationTitle(
+  entries: ChatEntry[],
+  fallback: string = DEFAULT_CONVERSATION_TITLE
+) {
+  const firstUserMessage = entries.find(
+    (entry): entry is Extract<ChatEntry, { kind: "user" }> => entry.kind === "user"
+  )
+  if (!firstUserMessage) return fallback
+  const trimmed = firstUserMessage.text.trim()
+  if (!trimmed) return fallback
+  return trimmed.length > 60 ? `${trimmed.slice(0, 60)}...` : trimmed
+}
 
 const makeId = (() => {
   let counter = 0
@@ -34,9 +54,109 @@ export function useChatController() {
   const [selectedTabIds, setSelectedTabIds] = useState<Set<number>>(new Set())
   const lastAiIdRef = useRef<string | null>(null)
   const pendingToolIdsRef = useRef<PendingTool[]>([])
+  const [conversations, setConversations, conversationsReady] =
+    useStorageSync<Conversation[]>("oliveConversations", [])
+  const [activeConversationId, setActiveConversationId] =
+    useState<string | null>(null)
+  const initialisedConversationRef = useRef(false)
 
   useScrollToBottom(listRef, messages.length)
   useTextareaAutoResize(textareaRef, draft)
+
+  useEffect(() => {
+    if (!conversationsReady) return
+    if (initialisedConversationRef.current) return
+    initialisedConversationRef.current = true
+
+    if (conversations.length === 0) {
+      const newId = makeId()
+      const now = Date.now()
+      setConversations([
+        {
+          id: newId,
+          title: DEFAULT_CONVERSATION_TITLE,
+          messages: [],
+          updatedAt: now,
+        },
+      ])
+      setActiveConversationId(newId)
+      return
+    }
+
+    const firstConversation = conversations[0]
+    setActiveConversationId(firstConversation.id)
+    setMessages(firstConversation.messages ?? [])
+  }, [conversationsReady, conversations, setConversations])
+
+  useEffect(() => {
+    if (!conversationsReady) return
+    if (!activeConversationId) return
+
+    const activeExists = conversations.some(
+      (conversation) => conversation.id === activeConversationId
+    )
+    if (activeExists || conversations.length === 0) return
+
+    const fallback = conversations[0]
+    if (fallback) {
+      setActiveConversationId(fallback.id)
+      setMessages(fallback.messages ?? [])
+    } else {
+      const newId = makeId()
+      const now = Date.now()
+      setConversations([
+        {
+          id: newId,
+          title: DEFAULT_CONVERSATION_TITLE,
+          messages: [],
+          updatedAt: now,
+        },
+      ])
+      setActiveConversationId(newId)
+      setMessages([])
+    }
+  }, [conversationsReady, conversations, activeConversationId, setConversations])
+
+  useEffect(() => {
+    if (!conversationsReady) return
+    if (!activeConversationId) return
+
+    setConversations((prev) => {
+      const currentIdx = prev.findIndex(
+        (conversation) => conversation.id === activeConversationId
+      )
+      const current = currentIdx >= 0 ? prev[currentIdx] : undefined
+      const nextTitle = deriveConversationTitle(
+        messages,
+        current?.title ?? DEFAULT_CONVERSATION_TITLE
+      )
+      const needsUpdate =
+        !current || current.messages !== messages || current.title !== nextTitle
+      if (!needsUpdate) return prev
+
+      const updatedConversation: Conversation = {
+        id: activeConversationId,
+        title: nextTitle,
+        messages,
+        updatedAt: Date.now(),
+      }
+
+      if (!current) {
+        return [updatedConversation, ...prev]
+      }
+
+      const remaining = [
+        ...prev.slice(0, currentIdx),
+        ...prev.slice(currentIdx + 1),
+      ]
+      return [updatedConversation, ...remaining]
+    })
+  }, [
+    messages,
+    activeConversationId,
+    conversationsReady,
+    setConversations,
+  ])
 
   useEffect(() => {
     if (tabPickerOpen) return
@@ -61,8 +181,70 @@ export function useChatController() {
     })
   }, [])
 
+  const ensureActiveConversation = useCallback(() => {
+    if (!conversationsReady) return activeConversationId
+    if (activeConversationId) return activeConversationId
+    const newId = makeId()
+    const now = Date.now()
+    setActiveConversationId(newId)
+    setConversations((prev) => [
+      {
+        id: newId,
+        title: DEFAULT_CONVERSATION_TITLE,
+        messages: [],
+        updatedAt: now,
+      },
+      ...prev,
+    ])
+    return newId
+  }, [
+    activeConversationId,
+    conversationsReady,
+    setActiveConversationId,
+    setConversations,
+  ])
+
+  const startNewConversation = useCallback(() => {
+    if (!conversationsReady) return
+    const newId = makeId()
+    const now = Date.now()
+    setActiveConversationId(newId)
+    setMessages([])
+    setDraft("")
+    setConversations((prev) => [
+      {
+        id: newId,
+        title: DEFAULT_CONVERSATION_TITLE,
+        messages: [],
+        updatedAt: now,
+      },
+      ...prev,
+    ])
+  }, [conversationsReady, setConversations, setMessages, setDraft])
+
+  const selectConversation = useCallback(
+    (id: string) => {
+      if (!conversationsReady) return
+      if (id === activeConversationId) return
+      const conversation = conversations.find((c) => c.id === id)
+      if (!conversation) return
+      setActiveConversationId(conversation.id)
+      setMessages(conversation.messages ?? [])
+      setDraft("")
+    },
+    [
+      conversations,
+      activeConversationId,
+      conversationsReady,
+      setMessages,
+      setDraft,
+    ]
+  )
+
   const send = useCallback(
     async (prompt: string) => {
+      if (!conversationsReady) return
+      ensureActiveConversation()
       const selectedTabs = allTabs.filter((t) =>
         t.id ? selectedTabIds.has(t.id) : false
       )
@@ -255,16 +437,26 @@ export function useChatController() {
         setSelectedTabIds(() => new Set())
       }
     },
-    [allTabs, selectedTabIds, messages, model, thinking, autoRunTools]
+    [
+      allTabs,
+      selectedTabIds,
+      messages,
+      model,
+      thinking,
+      autoRunTools,
+      ensureActiveConversation,
+      conversationsReady,
+    ]
   )
 
   const handleSubmit = useCallback(
     (text: string) => {
       if (!text.trim()) return
+      if (!conversationsReady) return
       setDraft("")
       void send(text.trim())
     },
-    [send]
+    [send, conversationsReady]
   )
 
   const handleStop = useCallback(() => {
@@ -293,5 +485,10 @@ export function useChatController() {
     removeSelectedTab,
     handleSubmit,
     handleStop,
+    conversations,
+    activeConversationId,
+    selectConversation,
+    startNewConversation,
+    conversationsReady,
   }
 }

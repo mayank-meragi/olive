@@ -50,3 +50,10 @@ export type ChatEntry =
   | AiMessageEntry
   | ThinkingEntry
   | ToolTimelineEntry
+
+export type Conversation = {
+  id: string
+  title: string
+  messages: ChatEntry[]
+  updatedAt: number
+}
