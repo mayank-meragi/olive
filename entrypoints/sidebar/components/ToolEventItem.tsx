@@ -1,6 +1,9 @@
-import React from 'react'
-import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
-import type { ToolTimelineEntry } from '../types'
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@/components/ui/collapsible"
+import type { ToolTimelineEntry } from "../types"
 
 const jsonPreview = (value: any, max = 160) => {
   try {
@@ -17,17 +20,17 @@ export function ToolEventItem({ entry }: { entry: ToolTimelineEntry }) {
   const resultPreview = jsonPreview(entry.result)
   const baseName = entry.displayName || entry.name
   const statusLabel =
-    entry.status === 'calling'
-      ? 'Running'
+    entry.status === "calling"
+      ? "Running"
       : entry.error
-        ? 'Failed'
-        : 'Completed'
+      ? "Failed"
+      : "Completed"
 
   return (
-    <div className="mr-auto max-w-[80%] text-xs text-muted-foreground">
+    <div className="mr-auto max-w-[80%]">
       <Collapsible defaultOpen={false}>
-        <CollapsibleTrigger className="w-full rounded-md border bg-muted px-3 py-2 text-left font-medium text-foreground">
-          {baseName} {statusLabel}
+        <CollapsibleTrigger className="text-xs text-muted-foreground">
+          {baseName} ({statusLabel})
         </CollapsibleTrigger>
         <CollapsibleContent>
           <div className="mt-1 space-y-2 rounded-md border bg-background p-2">

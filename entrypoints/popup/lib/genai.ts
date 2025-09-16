@@ -1,4 +1,5 @@
 import { GoogleGenAI } from "@google/genai"
+import { SYSTEM_INSTRUCTIONS } from "./prompts"
 
 export type GenerateOptions = {
   stream?: boolean
@@ -349,7 +350,9 @@ export async function generateWithGemini(
   const model = opts.model ?? DEFAULT_MODEL
 
   const thinkingConfig = resolveThinkingConfig(opts)
-  const config: any = {}
+  const config: any = {
+    systemInstruction: SYSTEM_INSTRUCTIONS,
+  }
   if (thinkingConfig) config.thinkingConfig = thinkingConfig
 
   const hasTools = !!opts.tools && Object.keys(opts.tools!).length > 0

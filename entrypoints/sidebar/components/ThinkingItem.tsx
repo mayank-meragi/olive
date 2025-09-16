@@ -1,7 +1,10 @@
-import React from 'react'
-import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
-import { MarkdownRenderer } from './MarkdownRenderer'
-import type { ThinkingEntry } from '../types'
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@/components/ui/collapsible"
+import type { ThinkingEntry } from "../types"
+import { MarkdownRenderer } from "./MarkdownRenderer"
 
 export function ThinkingItem({ entry }: { entry: ThinkingEntry }) {
   if (!entry.text) return null
@@ -9,7 +12,7 @@ export function ThinkingItem({ entry }: { entry: ThinkingEntry }) {
     <div className="mr-auto max-w-[80%]">
       <div className="mb-1">
         <Collapsible defaultOpen={false}>
-          <CollapsibleTrigger className="text-xs text-muted-foreground underline">
+          <CollapsibleTrigger className="text-xs text-muted-foreground">
             Thinking
           </CollapsibleTrigger>
           <CollapsibleContent>
