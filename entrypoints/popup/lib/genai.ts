@@ -24,9 +24,10 @@ export type GenerateOptions = {
     toolEvents?: ToolEvent[]
   }>
   // Live tool-call hooks for UI ordering
-  onToolCall?: (ev: { name: string; args: any }) => void
+  onToolCall?: (ev: { name: string; displayName?: string; args: any }) => void
   onToolResult?: (ev: {
     name: string
+    displayName?: string
     args: any
     result?: any
     error?: string
@@ -41,6 +42,7 @@ export type ToolHandler = (args: any, ctx: ToolHandlerContext) => Promise<any>
 
 export type ToolDefinition = {
   name: string
+  displayName?: string
   description?: string
   // Parameters schema in SDK's Schema format (use Type.OBJECT, etc.)
   parameters: any
@@ -51,6 +53,7 @@ export type ToolRegistry = Record<string, ToolDefinition>
 
 export type ToolEvent = {
   name: string
+  displayName?: string
   args: any
   result?: any
   error?: string
@@ -422,10 +425,19 @@ export async function generateWithGemini(
         const name: string = call.name
         const def = opts.tools![name]
         try {
-          opts.onToolCall?.({ name, args: call.args })
+          opts.onToolCall?.({
+            name,
+            displayName: def?.displayName,
+            args: call.args,
+          })
         } catch {}
         if (!def) {
-          events.push({ name, args: call.args, error: "Unknown tool" })
+          events.push({
+            name,
+            displayName: name,
+            args: call.args,
+            error: "Unknown tool",
+          })
           contents.push({
             role: "user",
             parts: [
@@ -450,13 +462,23 @@ export async function generateWithGemini(
         }
         try {
           const result = await def.handler(args, {})
-          events.push({ name, args, result })
+          events.push({
+            name,
+            displayName: def.displayName ?? name,
+            args,
+            result,
+          })
           contents.push({
             role: "user",
             parts: [{ functionResponse: { name, response: result } }],
           })
           try {
-            opts.onToolResult?.({ name, args, result })
+            opts.onToolResult?.({
+              name,
+              displayName: def.displayName,
+              args,
+              result,
+            })
           } catch {}
           tryDebug(opts.debug, "[genai] tool success", {
             name,
@@ -466,7 +488,12 @@ export async function generateWithGemini(
           executed.add(execKey)
         } catch (e: any) {
           const error = e?.message ?? String(e)
-          events.push({ name, args, error })
+          events.push({
+            name,
+            displayName: def.displayName ?? name,
+            args,
+            error,
+          })
           contents.push({
             role: "user",
             parts: [
@@ -474,7 +501,12 @@ export async function generateWithGemini(
             ],
           })
           try {
-            opts.onToolResult?.({ name, args, error })
+            opts.onToolResult?.({
+              name,
+              displayName: def.displayName,
+              args,
+              error,
+            })
           } catch {}
           tryDebug(opts.debug, "[genai] tool error", { name, args, error })
           executed.add(execKey)

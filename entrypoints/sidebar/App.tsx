@@ -36,7 +36,7 @@ export default function Sidebar() {
   const [allTabs, setAllTabs] = useState<Array<browser.tabs.Tab>>([])
   const [selectedTabIds, setSelectedTabIds] = useState<Set<number>>(new Set())
   const lastAiIdRef = useRef<string | null>(null)
-  const pendingToolIdsRef = useRef<string[]>([])
+  const pendingToolIdsRef = useRef<Array<{ id: string; name: string }>>([])
 
   useScrollToBottom(listRef, messages.length)
   useTextareaAutoResize(textareaRef, draft)
@@ -99,12 +99,13 @@ export default function Sidebar() {
         callbacks: {
           onToolCall: (ev) => {
             const toolId = makeId()
-            pendingToolIdsRef.current.push(toolId)
+            pendingToolIdsRef.current.push({ id: toolId, name: ev.name })
             setMessages((prev) => [
               ...prev,
               {
                 id: toolId,
                 kind: "tool",
+                displayName: ev.displayName ?? ev.name,
                 name: ev.name,
                 args: ev.args,
                 status: "calling",
@@ -114,23 +115,44 @@ export default function Sidebar() {
           onToolResult: (ev) => {
             setMessages((prev) => {
               const next = [...prev]
-              let toolId = pendingToolIdsRef.current.shift()
-              if (toolId) {
-                const idx = next.findIndex((entry) => entry.id === toolId)
+              const queued = pendingToolIdsRef.current.shift()
+              const updateEntry = (idx: number) => {
+                const entry = next[idx] as ToolTimelineEntry
+                next[idx] = {
+                  ...entry,
+                  displayName: ev.displayName ?? entry.displayName ?? ev.name,
+                  status: "done",
+                  result: ev.result,
+                  error: ev.error,
+                }
+                return next
+              }
+
+              if (queued) {
+                const idx = next.findIndex((entry) => entry.id === queued.id)
                 if (idx >= 0 && next[idx]?.kind === "tool") {
-                  const entry = next[idx] as ToolTimelineEntry
-                  next[idx] = {
-                    ...entry,
-                    status: "done",
-                    result: ev.result,
-                    error: ev.error,
-                  }
-                  return next
+                  return updateEntry(idx)
                 }
               }
+
+              const fallbackIdx = [...next]
+                .reverse()
+                .findIndex(
+                  (entry) =>
+                    entry.kind === "tool" &&
+                    entry.status === "calling" &&
+                    entry.name === ev.name
+                )
+
+              if (fallbackIdx !== -1) {
+                const idx = next.length - 1 - fallbackIdx
+                return updateEntry(idx)
+              }
+
               next.push({
                 id: makeId(),
                 kind: "tool",
+                displayName: ev.displayName ?? ev.name,
                 name: ev.name,
                 args: ev.args,
                 status: "done",

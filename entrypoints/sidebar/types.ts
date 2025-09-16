@@ -31,6 +31,7 @@ export type ThinkingEntry = TimelineEntryBase & {
 
 export type ToolTimelineEntry = TimelineEntryBase & {
   kind: 'tool'
+  displayName?: string
   name: string
   args: any
   status: 'calling' | 'done'
@@ -43,4 +44,3 @@ export type ChatEntry =
   | AiMessageEntry
   | ThinkingEntry
   | ToolTimelineEntry
-

@@ -22,6 +22,7 @@ export function buildBrowserTools(opts: { autoRun: boolean }): ToolRegistry {
 
   const openTab: ToolDefinition = {
     name: 'open_tab',
+    displayName: 'Open Tab',
     description: 'Open a new browser tab to a given URL (http/https).',
     parameters: {
       type: Type.OBJECT,
@@ -41,6 +42,7 @@ export function buildBrowserTools(opts: { autoRun: boolean }): ToolRegistry {
 
   const closeTab: ToolDefinition = {
     name: 'close_tab',
+    displayName: 'Close Tab',
     description: 'Close a tab by id.',
     parameters: {
       type: Type.OBJECT,
@@ -63,6 +65,7 @@ export function buildBrowserTools(opts: { autoRun: boolean }): ToolRegistry {
 
   const switchTab: ToolDefinition = {
     name: 'switch_tab',
+    displayName: 'Switch Tab',
     description: 'Activate/focus a tab by id.',
     parameters: {
       type: Type.OBJECT,
@@ -86,6 +89,7 @@ export function buildBrowserTools(opts: { autoRun: boolean }): ToolRegistry {
 
   const navigateTab: ToolDefinition = {
     name: 'navigate_tab',
+    displayName: 'Navigate Tab',
     description: 'Navigate an existing tab to a new URL (http/https).',
     parameters: {
       type: Type.OBJECT,
@@ -111,6 +115,7 @@ export function buildBrowserTools(opts: { autoRun: boolean }): ToolRegistry {
 
   const reloadTab: ToolDefinition = {
     name: 'reload_tab',
+    displayName: 'Reload Tab',
     description: 'Reload an existing tab.',
     parameters: {
       type: Type.OBJECT,
@@ -134,6 +139,7 @@ export function buildBrowserTools(opts: { autoRun: boolean }): ToolRegistry {
 
   const listTabs: ToolDefinition = {
     name: 'list_tabs',
+    displayName: 'List Tabs',
     description: 'List open tabs with basic info (id, title, url, active, windowId, favIconUrl).',
     parameters: {
       type: Type.OBJECT,
@@ -188,6 +194,7 @@ export function buildBrowserTools(opts: { autoRun: boolean }): ToolRegistry {
 
   const getPageContent: ToolDefinition = {
     name: 'get_page_content',
+    displayName: 'Get Page Content',
     description: 'Get text or HTML content of the page or a specific element, optionally waiting for dynamic content.',
     parameters: {
       type: Type.OBJECT,
@@ -271,6 +278,7 @@ export function buildBrowserTools(opts: { autoRun: boolean }): ToolRegistry {
 
   const fillFormField: ToolDefinition = {
     name: 'fill_form_field',
+    displayName: 'Fill Form Field',
     description: 'Fill an input/textarea/contenteditable field by CSS selector.',
     parameters: {
       type: Type.OBJECT,
@@ -310,6 +318,7 @@ export function buildBrowserTools(opts: { autoRun: boolean }): ToolRegistry {
 
   const clickElement: ToolDefinition = {
     name: 'click_element',
+    displayName: 'Click Element',
     description: 'Click a button/link or any clickable element by CSS selector.',
     parameters: {
       type: Type.OBJECT,
@@ -335,6 +344,7 @@ export function buildBrowserTools(opts: { autoRun: boolean }): ToolRegistry {
 
   const scrollPage: ToolDefinition = {
     name: 'scroll',
+    displayName: 'Scroll',
     description: 'Scroll the window or a specific element to load more content.',
     parameters: {
       type: Type.OBJECT,

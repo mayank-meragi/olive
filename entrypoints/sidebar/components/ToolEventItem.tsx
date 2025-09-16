@@ -1,4 +1,5 @@
 import React from 'react'
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
 import type { ToolTimelineEntry } from '../types'
 
 const jsonPreview = (value: any, max = 160) => {
@@ -14,28 +15,44 @@ const jsonPreview = (value: any, max = 160) => {
 export function ToolEventItem({ entry }: { entry: ToolTimelineEntry }) {
   const argsPreview = jsonPreview(entry.args)
   const resultPreview = jsonPreview(entry.result)
-  const statusLine = entry.status === 'calling'
-    ? 'Running…'
-    : entry.error
-      ? `Error — ${entry.error}`
-      : 'Completed'
+  const baseName = entry.displayName || entry.name
+  const statusLabel =
+    entry.status === 'calling'
+      ? 'Running'
+      : entry.error
+        ? 'Failed'
+        : 'Completed'
 
   return (
     <div className="mr-auto max-w-[80%] text-xs text-muted-foreground">
-      <div className="rounded-md border bg-muted px-3 py-2">
-        <div className="font-medium text-foreground">Tool {entry.name}</div>
-        <div className="mt-1">Status: {statusLine}</div>
-        {argsPreview && (
-          <pre className="mt-2 overflow-x-auto rounded bg-background p-2 text-[11px] text-foreground">
-            {argsPreview}
-          </pre>
-        )}
-        {resultPreview && (
-          <pre className="mt-2 overflow-x-auto rounded bg-background p-2 text-[11px] text-foreground">
-            {resultPreview}
-          </pre>
-        )}
-      </div>
+      <Collapsible defaultOpen={false}>
+        <CollapsibleTrigger className="w-full rounded-md border bg-muted px-3 py-2 text-left font-medium text-foreground">
+          {baseName} {statusLabel}
+        </CollapsibleTrigger>
+        <CollapsibleContent>
+          <div className="mt-1 space-y-2 rounded-md border bg-background p-2">
+            {entry.error && (
+              <div className="text-xs text-red-600">Error: {entry.error}</div>
+            )}
+            {argsPreview && (
+              <div>
+                <div className="mb-1 font-semibold text-foreground">Input</div>
+                <pre className="overflow-x-auto rounded bg-muted p-2 text-[11px] text-foreground">
+                  {argsPreview}
+                </pre>
+              </div>
+            )}
+            {resultPreview && (
+              <div>
+                <div className="mb-1 font-semibold text-foreground">Output</div>
+                <pre className="overflow-x-auto rounded bg-muted p-2 text-[11px] text-foreground">
+                  {resultPreview}
+                </pre>
+              </div>
+            )}
+          </div>
+        </CollapsibleContent>
+      </Collapsible>
     </div>
   )
 }

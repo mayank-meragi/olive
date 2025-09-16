@@ -2,8 +2,14 @@ import { generateWithGemini, type ToolEvent } from '@/lib/genai'
 import { buildBrowserTools } from '@/lib/tools'
 
 export type RunChatCallbacks = {
-  onToolCall?: (ev: { name: string; args: any }) => void
-  onToolResult?: (ev: { name: string; args: any; result?: any; error?: string }) => void
+  onToolCall?: (ev: { name: string; displayName?: string; args: any }) => void
+  onToolResult?: (ev: {
+    name: string
+    displayName?: string
+    args: any
+    result?: any
+    error?: string
+  }) => void
   onUpdate?: (full: string) => void
   onThinkingUpdate?: (full: string) => void
   shouldContinue?: () => boolean
@@ -39,4 +45,3 @@ export async function runChat({
   })
   return { events }
 }
-
