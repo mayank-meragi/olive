@@ -3,6 +3,7 @@ import { History, Plus } from "lucide-react"
 import { useState } from "react"
 import { ChatComposer } from "./components/ChatComposer"
 import { MessageList } from "./components/MessageList"
+import { TasksPanel } from "./components/TasksPanel"
 import { useChatController } from "./hooks/useChatController"
 
 function formatConversationTime(timestamp?: number) {
@@ -47,13 +48,21 @@ export default function Sidebar() {
     selectConversation,
     startNewConversation,
     conversationsReady,
+    tasks,
+    addTask,
+    addSubtask,
+    removeTask,
+    removeSubtask,
+    toggleTaskCompletion,
+    toggleSubtaskCompletion,
   } = useChatController()
   const [historyOpen, setHistoryOpen] = useState(false)
 
   return (
     <div className="flex h-screen w-full flex-col">
       <div className="flex items-center justify-between border-b px-3 py-2">
-        <div className="flex items-center gap-2 float-end">
+        <div className="text-sm font-medium">Olive — AI Sidebar</div>
+        <div className="flex items-center gap-2">
           <Button
             onClick={() => {
               startNewConversation()
@@ -127,6 +136,16 @@ export default function Sidebar() {
           <div ref={listRef} className="flex-1 space-y-2 overflow-auto p-3">
             <MessageList messages={messages} />
           </div>
+          <TasksPanel
+            tasks={tasks}
+            onAddTask={addTask}
+            onAddSubtask={addSubtask}
+            onToggleTask={toggleTaskCompletion}
+            onToggleSubtask={toggleSubtaskCompletion}
+            onDeleteTask={removeTask}
+            onDeleteSubtask={removeSubtask}
+            disabled={!conversationsReady}
+          />
           <ChatComposer
             draft={draft}
             onDraftChange={(value) => setDraft(value)}

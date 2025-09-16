@@ -1,5 +1,5 @@
 import { generateWithGemini, type ToolEvent } from '@/lib/genai'
-import { buildBrowserTools } from '@/lib/tools'
+import { buildBrowserTools, type TaskToolClient } from '@/lib/tools'
 
 export type RunChatCallbacks = {
   onToolCall?: (ev: { name: string; displayName?: string; args: any }) => void
@@ -21,6 +21,7 @@ export async function runChat({
   thinkingEnabled,
   autoRunTools,
   history,
+  taskClient,
   callbacks,
 }: {
   prompt: string
@@ -28,9 +29,10 @@ export async function runChat({
   thinkingEnabled: boolean
   autoRunTools: boolean
   history: Array<{ role: 'user' | 'model'; text?: string; toolEvents?: ToolEvent[] }>
+  taskClient?: TaskToolClient
   callbacks: RunChatCallbacks
 }): Promise<{ events: ToolEvent[] }> {
-  const tools = buildBrowserTools({ autoRun: autoRunTools })
+  const tools = buildBrowserTools({ autoRun: autoRunTools, taskClient })
   const { events } = await generateWithGemini(prompt, {
     model,
     thinkingEnabled,

@@ -14,6 +14,23 @@ export type TimelineEntryBase = {
   kind: TimelineKind
 }
 
+export type Subtask = {
+  id: string
+  title: string
+  completed: boolean
+  createdAt: number
+  updatedAt: number
+}
+
+export type Task = {
+  id: string
+  title: string
+  completed: boolean
+  createdAt: number
+  updatedAt: number
+  subtasks: Subtask[]
+}
+
 export type UserMessageEntry = TimelineEntryBase & {
   kind: "user"
   text: string
@@ -56,4 +73,5 @@ export type Conversation = {
   title: string
   messages: ChatEntry[]
   updatedAt: number
+  tasks?: Task[]
 }

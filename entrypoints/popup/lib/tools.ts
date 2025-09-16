@@ -1,6 +1,29 @@
 import { Type } from '@google/genai'
 import type { ToolRegistry, ToolDefinition } from './genai'
 
+export type TaskCreationInput = {
+  title: string
+  parentTaskId?: string
+  completed?: boolean
+}
+
+export type TaskDeletionInput = {
+  taskId: string
+  parentTaskId?: string
+}
+
+export type TaskCompletionInput = {
+  taskId: string
+  parentTaskId?: string
+  done?: boolean
+}
+
+export type TaskToolClient = {
+  createTask: (input: TaskCreationInput) => Promise<any>
+  deleteTask: (input: TaskDeletionInput) => Promise<any>
+  markTaskDone: (input: TaskCompletionInput) => Promise<any>
+}
+
 function ensureHttpUrl(url: string): string | null {
   try {
     const u = new URL(String(url))
@@ -15,7 +38,10 @@ function isValidId(id: unknown): id is number {
   return typeof id === 'number' && Number.isFinite(id) && id >= 0
 }
 
-export function buildBrowserTools(opts: { autoRun: boolean }): ToolRegistry {
+export function buildBrowserTools(opts: {
+  autoRun: boolean
+  taskClient?: TaskToolClient
+}): ToolRegistry {
   const mustAllow = () => {
     if (!opts.autoRun) throw new Error('Tool execution disabled by user')
   }
@@ -383,7 +409,107 @@ export function buildBrowserTools(opts: { autoRun: boolean }): ToolRegistry {
     },
   }
 
-  return {
+  let createTaskTool: ToolDefinition | null = null
+  let deleteTaskTool: ToolDefinition | null = null
+  let markTaskDoneTool: ToolDefinition | null = null
+
+  if (opts.taskClient) {
+    const taskClient = opts.taskClient
+    createTaskTool = {
+      name: 'create_task',
+      displayName: 'Create Task',
+      description:
+        'Create a task or subtask in the active Olive conversation. Provide parentTaskId to create a subtask.',
+      parameters: {
+        type: Type.OBJECT,
+        properties: {
+          title: {
+            type: Type.STRING,
+            description: 'Short description of the task or subtask.',
+          },
+          parentTaskId: {
+            type: Type.STRING,
+            description: 'Optional id of the parent task when creating a subtask.',
+          },
+          completed: {
+            type: Type.BOOLEAN,
+            description: 'Set true to immediately mark the task/subtask as done.',
+          },
+        },
+        required: ['title'],
+      },
+      handler: async ({ title, parentTaskId, completed }) => {
+        mustAllow()
+        return await taskClient.createTask({
+          title: String(title ?? ''),
+          parentTaskId: typeof parentTaskId === 'string' ? parentTaskId : undefined,
+          completed: typeof completed === 'boolean' ? completed : undefined,
+        })
+      },
+    }
+
+    deleteTaskTool = {
+      name: 'delete_task',
+      displayName: 'Delete Task',
+      description: 'Delete a task or subtask by id in the active conversation.',
+      parameters: {
+        type: Type.OBJECT,
+        properties: {
+          taskId: {
+            type: Type.STRING,
+            description: 'Id of the task or subtask to delete.',
+          },
+          parentTaskId: {
+            type: Type.STRING,
+            description: 'If deleting a subtask, provide the parent task id.',
+          },
+        },
+        required: ['taskId'],
+      },
+      handler: async ({ taskId, parentTaskId }) => {
+        mustAllow()
+        return await taskClient.deleteTask({
+          taskId: String(taskId ?? ''),
+          parentTaskId: typeof parentTaskId === 'string' ? parentTaskId : undefined,
+        })
+      },
+    }
+
+    markTaskDoneTool = {
+      name: 'mark_task_done',
+      displayName: 'Mark Task Done',
+      description:
+        'Mark a task or subtask complete/incomplete. Provide done=false to reopen the task.',
+      parameters: {
+        type: Type.OBJECT,
+        properties: {
+          taskId: {
+            type: Type.STRING,
+            description: 'Id of the task or subtask to update.',
+          },
+          parentTaskId: {
+            type: Type.STRING,
+            description: 'If updating a subtask, provide the parent task id.',
+          },
+          done: {
+            type: Type.BOOLEAN,
+            description: 'Set to true for done, false for not done. Omit to toggle.',
+          },
+        },
+        required: ['taskId'],
+      },
+      handler: async ({ taskId, parentTaskId, done }) => {
+        mustAllow()
+        return await taskClient.markTaskDone({
+          taskId: String(taskId ?? ''),
+          parentTaskId: typeof parentTaskId === 'string' ? parentTaskId : undefined,
+          done: typeof done === 'boolean' ? done : undefined,
+        })
+      },
+    }
+  }
+
+  const registry: ToolRegistry = {
     [openTab.name]: openTab,
     [closeTab.name]: closeTab,
     [switchTab.name]: switchTab,
@@ -395,4 +521,12 @@ export function buildBrowserTools(opts: { autoRun: boolean }): ToolRegistry {
     [clickElement.name]: clickElement,
     [scrollPage.name]: scrollPage,
   }
+
+  if (createTaskTool && deleteTaskTool && markTaskDoneTool) {
+    registry[createTaskTool.name] = createTaskTool
+    registry[deleteTaskTool.name] = deleteTaskTool
+    registry[markTaskDoneTool.name] = markTaskDoneTool
+  }
+
+  return registry
 }

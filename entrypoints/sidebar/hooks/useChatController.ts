@@ -1,10 +1,11 @@
 import type { ToolEvent } from "@/lib/genai"
-import { useCallback, useEffect, useRef, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { runChat } from "../lib/chatService"
 import type {
   ChatEntry,
   Conversation,
   TabCtx,
+  Task,
   ToolTimelineEntry,
 } from "../types"
 import { useScrollToBottom } from "./useScrollToBottom"
@@ -36,6 +37,7 @@ const makeId = (() => {
 export function useChatController() {
   const [messages, setMessages] = useState<ChatEntry[]>([])
   const [draft, setDraft] = useState("")
+  const [tasks, setTasks] = useState<Task[]>([])
   const listRef = useRef<HTMLDivElement | null>(null)
   const textareaRef = useRef<HTMLTextAreaElement | null>(null)
   const [model, setModel] = useStorageSync<string>(
@@ -77,15 +79,18 @@ export function useChatController() {
           title: DEFAULT_CONVERSATION_TITLE,
           messages: [],
           updatedAt: now,
+          tasks: [],
         },
       ])
       setActiveConversationId(newId)
+      setTasks([])
       return
     }
 
     const firstConversation = conversations[0]
     setActiveConversationId(firstConversation.id)
     setMessages(firstConversation.messages ?? [])
+    setTasks(firstConversation.tasks ?? [])
   }, [conversationsReady, conversations, setConversations])
 
   useEffect(() => {
@@ -101,6 +106,7 @@ export function useChatController() {
     if (fallback) {
       setActiveConversationId(fallback.id)
       setMessages(fallback.messages ?? [])
+      setTasks(fallback.tasks ?? [])
     } else {
       const newId = makeId()
       const now = Date.now()
@@ -110,10 +116,12 @@ export function useChatController() {
           title: DEFAULT_CONVERSATION_TITLE,
           messages: [],
           updatedAt: now,
+          tasks: [],
         },
       ])
       setActiveConversationId(newId)
       setMessages([])
+      setTasks([])
     }
   }, [conversationsReady, conversations, activeConversationId, setConversations])
 
@@ -131,7 +139,10 @@ export function useChatController() {
         current?.title ?? DEFAULT_CONVERSATION_TITLE
       )
       const needsUpdate =
-        !current || current.messages !== messages || current.title !== nextTitle
+        !current ||
+        current.messages !== messages ||
+        current.title !== nextTitle ||
+        current.tasks !== tasks
       if (!needsUpdate) return prev
 
       const updatedConversation: Conversation = {
@@ -139,6 +150,7 @@ export function useChatController() {
         title: nextTitle,
         messages,
         updatedAt: Date.now(),
+        tasks,
       }
 
       if (!current) {
@@ -153,6 +165,7 @@ export function useChatController() {
     })
   }, [
     messages,
+    tasks,
     activeConversationId,
     conversationsReady,
     setConversations,
@@ -187,12 +200,14 @@ export function useChatController() {
     const newId = makeId()
     const now = Date.now()
     setActiveConversationId(newId)
+    setTasks([])
     setConversations((prev) => [
       {
         id: newId,
         title: DEFAULT_CONVERSATION_TITLE,
         messages: [],
         updatedAt: now,
+        tasks: [],
       },
       ...prev,
     ])
@@ -201,6 +216,7 @@ export function useChatController() {
     activeConversationId,
     conversationsReady,
     setActiveConversationId,
+    setTasks,
     setConversations,
   ])
 
@@ -211,16 +227,18 @@ export function useChatController() {
     setActiveConversationId(newId)
     setMessages([])
     setDraft("")
+    setTasks([])
     setConversations((prev) => [
       {
         id: newId,
         title: DEFAULT_CONVERSATION_TITLE,
         messages: [],
         updatedAt: now,
+        tasks: [],
       },
       ...prev,
     ])
-  }, [conversationsReady, setConversations, setMessages, setDraft])
+  }, [conversationsReady, setConversations, setMessages, setDraft, setTasks])
 
   const selectConversation = useCallback(
     (id: string) => {
@@ -231,6 +249,7 @@ export function useChatController() {
       setActiveConversationId(conversation.id)
       setMessages(conversation.messages ?? [])
       setDraft("")
+      setTasks(conversation.tasks ?? [])
     },
     [
       conversations,
@@ -238,7 +257,299 @@ export function useChatController() {
       conversationsReady,
       setMessages,
       setDraft,
+      setTasks,
     ]
+  )
+
+  const mutateTasks = useCallback(
+    (mutator: (prev: Task[]) => Task[]) => {
+      let snapshot: Task[] = []
+      setTasks((prev) => {
+        const result = mutator(prev)
+        snapshot = result
+        return result
+      })
+      return snapshot
+    },
+    [setTasks]
+  )
+
+  const createTaskNode = useCallback(
+    ({
+      title,
+      parentTaskId,
+      completed,
+    }: {
+      title: string
+      parentTaskId?: string
+      completed?: boolean
+    }) => {
+      const trimmed = (title ?? "").trim()
+      if (!trimmed) {
+        return { ok: false, error: "Task title is required" }
+      }
+      if (!conversationsReady) {
+        return { ok: false, error: "Conversation state not ready" }
+      }
+      const convId = ensureActiveConversation()
+      if (!convId) {
+        return { ok: false, error: "Unable to resolve conversation" }
+      }
+      const now = Date.now()
+      const targetCompleted = Boolean(completed)
+      let success = false
+      let createdTask: Task | undefined
+      let createdSubtask: Task["subtasks"][number] | undefined
+      const nextTasks = mutateTasks((prev) => {
+        if (parentTaskId) {
+          const idx = prev.findIndex((task) => task.id === parentTaskId)
+          if (idx === -1) return prev
+          success = true
+          const parent = prev[idx]
+          const subtask = {
+            id: makeId(),
+            title: trimmed,
+            completed: targetCompleted,
+            createdAt: now,
+            updatedAt: now,
+          }
+          createdSubtask = subtask
+          const updatedParent: Task = {
+            ...parent,
+            subtasks: [...parent.subtasks, subtask],
+            updatedAt: now,
+          }
+          const next = [...prev]
+          next[idx] = updatedParent
+          return next
+        }
+        success = true
+        const task: Task = {
+          id: makeId(),
+          title: trimmed,
+          completed: targetCompleted,
+          createdAt: now,
+          updatedAt: now,
+          subtasks: [],
+        }
+        createdTask = task
+        return [...prev, task]
+      })
+
+      if (!success) {
+        return {
+          ok: false,
+          error: parentTaskId
+            ? "Parent task not found"
+            : "Unable to create task",
+        }
+      }
+
+      return { ok: true, tasks: nextTasks, task: createdTask, subtask: createdSubtask }
+    },
+    [conversationsReady, ensureActiveConversation, mutateTasks]
+  )
+
+  const deleteTaskNode = useCallback(
+    ({
+      id,
+      parentTaskId,
+    }: {
+      id: string
+      parentTaskId?: string
+    }) => {
+      if (!id) return { ok: false, error: "Task id is required" }
+      if (!conversationsReady || !activeConversationId) {
+        return { ok: false, error: "No active conversation" }
+      }
+      let success = false
+      let removedTask: Task | undefined
+      let removedSubtask: Task["subtasks"][number] | undefined
+      const nextTasks = mutateTasks((prev) => {
+        if (parentTaskId) {
+          const parentIdx = prev.findIndex((task) => task.id === parentTaskId)
+          if (parentIdx === -1) return prev
+          const parent = prev[parentIdx]
+          const subIdx = parent.subtasks.findIndex((s) => s.id === id)
+          if (subIdx === -1) return prev
+          success = true
+          removedSubtask = parent.subtasks[subIdx]
+          const updatedParent: Task = {
+            ...parent,
+            subtasks: [
+              ...parent.subtasks.slice(0, subIdx),
+              ...parent.subtasks.slice(subIdx + 1),
+            ],
+            updatedAt: Date.now(),
+          }
+          const next = [...prev]
+          next[parentIdx] = updatedParent
+          return next
+        }
+        const idx = prev.findIndex((task) => task.id === id)
+        if (idx === -1) return prev
+        success = true
+        removedTask = prev[idx]
+        return [...prev.slice(0, idx), ...prev.slice(idx + 1)]
+      })
+
+      if (!success) {
+        return {
+          ok: false,
+          error: parentTaskId ? "Subtask not found" : "Task not found",
+        }
+      }
+
+      return { ok: true, tasks: nextTasks, task: removedTask, subtask: removedSubtask }
+    },
+    [
+      mutateTasks,
+      conversationsReady,
+      activeConversationId,
+    ]
+  )
+
+  const setTaskNodeCompletion = useCallback(
+    ({
+      id,
+      parentTaskId,
+      done,
+    }: {
+      id: string
+      parentTaskId?: string
+      done?: boolean
+    }) => {
+      if (!id) return { ok: false, error: "Task id is required" }
+      if (!conversationsReady || !activeConversationId) {
+        return { ok: false, error: "No active conversation" }
+      }
+      const now = Date.now()
+      let success = false
+      let updatedTask: Task | undefined
+      let updatedSubtask: Task["subtasks"][number] | undefined
+      const nextTasks = mutateTasks((prev) => {
+        if (parentTaskId) {
+          const parentIdx = prev.findIndex((task) => task.id === parentTaskId)
+          if (parentIdx === -1) return prev
+          const parent = prev[parentIdx]
+          const subIdx = parent.subtasks.findIndex((s) => s.id === id)
+          if (subIdx === -1) return prev
+          success = true
+          const target = parent.subtasks[subIdx]
+          const nextDone = typeof done === "boolean" ? done : !target.completed
+          const subtask = {
+            ...target,
+            completed: nextDone,
+            updatedAt: now,
+          }
+          updatedSubtask = subtask
+          const updatedParent: Task = {
+            ...parent,
+            subtasks: [
+              ...parent.subtasks.slice(0, subIdx),
+              subtask,
+              ...parent.subtasks.slice(subIdx + 1),
+            ],
+            updatedAt: now,
+          }
+          const next = [...prev]
+          next[parentIdx] = updatedParent
+          return next
+        }
+        const idx = prev.findIndex((task) => task.id === id)
+        if (idx === -1) return prev
+        success = true
+        const task = prev[idx]
+        const nextDone = typeof done === "boolean" ? done : !task.completed
+        const updated = {
+          ...task,
+          completed: nextDone,
+          updatedAt: now,
+        }
+        updatedTask = updated
+        const next = [...prev]
+        next[idx] = updated
+        return next
+      })
+
+      if (!success) {
+        return {
+          ok: false,
+          error: parentTaskId ? "Subtask not found" : "Task not found",
+        }
+      }
+
+      return { ok: true, tasks: nextTasks, task: updatedTask, subtask: updatedSubtask }
+    },
+    [
+      mutateTasks,
+      conversationsReady,
+      activeConversationId,
+    ]
+  )
+
+  const addTask = useCallback(
+    (title: string) => createTaskNode({ title, completed: false }),
+    [createTaskNode]
+  )
+
+  const addSubtask = useCallback(
+    (taskId: string, title: string) =>
+      createTaskNode({ title, parentTaskId: taskId, completed: false }),
+    [createTaskNode]
+  )
+
+  const removeTask = useCallback(
+    (id: string) => deleteTaskNode({ id }),
+    [deleteTaskNode]
+  )
+
+  const removeSubtask = useCallback(
+    (taskId: string, subtaskId: string) =>
+      deleteTaskNode({ id: subtaskId, parentTaskId: taskId }),
+    [deleteTaskNode]
+  )
+
+  const toggleTaskCompletion = useCallback(
+    (id: string, done?: boolean) => setTaskNodeCompletion({ id, done }),
+    [setTaskNodeCompletion]
+  )
+
+  const toggleSubtaskCompletion = useCallback(
+    (taskId: string, subtaskId: string, done?: boolean) =>
+      setTaskNodeCompletion({ id: subtaskId, parentTaskId: taskId, done }),
+    [setTaskNodeCompletion]
+  )
+
+  const taskToolClient = useMemo(
+    () => ({
+      createTask: async ({
+        title,
+        parentTaskId,
+        completed,
+      }: {
+        title: string
+        parentTaskId?: string
+        completed?: boolean
+      }) => createTaskNode({ title, parentTaskId, completed }),
+      deleteTask: async ({
+        taskId,
+        parentTaskId,
+      }: {
+        taskId: string
+        parentTaskId?: string
+      }) => deleteTaskNode({ id: taskId, parentTaskId }),
+      markTaskDone: async ({
+        taskId,
+        parentTaskId,
+        done,
+      }: {
+        taskId: string
+        parentTaskId?: string
+        done?: boolean
+      }) => setTaskNodeCompletion({ id: taskId, parentTaskId, done }),
+    }),
+    [createTaskNode, deleteTaskNode, setTaskNodeCompletion]
   )
 
   const send = useCallback(
@@ -301,6 +612,7 @@ export function useChatController() {
           thinkingEnabled: thinking,
           autoRunTools,
           history: historyForModel,
+          taskClient: taskToolClient,
           callbacks: {
             onToolCall: (ev) => {
               const toolId = makeId()
@@ -446,6 +758,7 @@ export function useChatController() {
       autoRunTools,
       ensureActiveConversation,
       conversationsReady,
+      taskToolClient,
     ]
   )
 
@@ -490,5 +803,12 @@ export function useChatController() {
     selectConversation,
     startNewConversation,
     conversationsReady,
+    tasks,
+    addTask,
+    addSubtask,
+    removeTask,
+    removeSubtask,
+    toggleTaskCompletion,
+    toggleSubtaskCompletion,
   }
 }
