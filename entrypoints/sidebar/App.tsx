@@ -6,15 +6,15 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { Switch } from "@/components/ui/switch"
+import type { ToolEvent } from "@/lib/genai"
 import { useEffect, useRef, useState } from "react"
-import { MessageList } from "./components/MessageList"
 import { ChatInput } from "./components/ChatInput"
+import { MessageList } from "./components/MessageList"
 import { TabPicker } from "./components/TabPicker"
 import { useScrollToBottom } from "./hooks/useScrollToBottom"
-import { useTextareaAutoResize } from "./hooks/useTextareaAutoResize"
 import { useStorageSync } from "./hooks/useStorageSync"
+import { useTextareaAutoResize } from "./hooks/useTextareaAutoResize"
 import { runChat } from "./lib/chatService"
-import type { ToolEvent } from "@/lib/genai"
 import type { ChatEntry, TabCtx, ToolTimelineEntry } from "./types"
 
 const makeId = (() => {
@@ -26,8 +26,14 @@ export default function Sidebar() {
   const [messages, setMessages] = useState<ChatEntry[]>([])
   const [draft, setDraft] = useState("")
   const listRef = useRef<HTMLDivElement | null>(null)
-  const [model, setModel] = useStorageSync<string>("oliveModel", "gemini-2.5-flash")
-  const [thinking, setThinking] = useStorageSync<boolean>("oliveThinking", false)
+  const [model, setModel] = useStorageSync<string>(
+    "oliveModel",
+    "gemini-2.5-flash"
+  )
+  const [thinking, setThinking] = useStorageSync<boolean>(
+    "oliveThinking",
+    false
+  )
   const stopRequested = useRef(false)
   const [streaming, setStreaming] = useState(false)
   const [autoRunTools, setAutoRunTools] = useState(true)
@@ -72,7 +78,11 @@ export default function Sidebar() {
     >((acc, entry) => {
       if (entry.kind === "user") acc.push({ role: "user", text: entry.text })
       if (entry.kind === "ai")
-        acc.push({ role: "model", text: entry.text, toolEvents: entry.toolEvents })
+        acc.push({
+          role: "model",
+          text: entry.text,
+          toolEvents: entry.toolEvents,
+        })
       return acc
     }, [])
 
@@ -193,10 +203,7 @@ export default function Sidebar() {
                 next[next.length - 1] = { ...last, text: tfull }
                 return next
               }
-              return [
-                ...next,
-                { id: makeId(), kind: "thinking", text: tfull },
-              ]
+              return [...next, { id: makeId(), kind: "thinking", text: tfull }]
             })
           },
           shouldContinue: () => !stopRequested.current,
@@ -242,7 +249,7 @@ export default function Sidebar() {
         <MessageList messages={messages} />
       </div>
       <form
-        className="sticky bottom-0 border-t bg-background p-2"
+        className="sticky bottom-0 border bg-background p-2 m-2 rounded-lg"
         onSubmit={(e) => {
           e.preventDefault()
           const text = draft.trim()
@@ -320,9 +327,8 @@ export default function Sidebar() {
         )}
         <div className="mt-2 flex items-center justify-between gap-2">
           <div className="flex w-[70%] items-center gap-2">
-            <span className="text-xs text-muted-foreground">Model</span>
             <Select value={model} onValueChange={setModel}>
-              <SelectTrigger className="h-8">
+              <SelectTrigger className="text-xs text-muted-foreground border-none">
                 <SelectValue placeholder="Select model" />
               </SelectTrigger>
               <SelectContent>

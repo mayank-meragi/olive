@@ -1,6 +1,6 @@
-import React from 'react'
-import { Button } from '@/components/ui/button'
-import { ArrowUp, Square } from 'lucide-react'
+import { Button } from "@/components/ui/button"
+import { ArrowUp, Square } from "lucide-react"
+import React from "react"
 
 export function ChatInput({
   draft,
@@ -27,22 +27,29 @@ export function ChatInput({
         value={draft}
         onChange={(e) => setDraft(e.target.value)}
         onKeyDown={(e) => {
-          if (e.key === '@') {
+          if (e.key === "@") {
             e.preventDefault()
             onAtTrigger()
             return
           }
-          if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+          if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
             e.preventDefault()
             if (!streaming) onSubmit()
           }
         }}
         rows={1}
-        className="flex w-full min-h-[36px] max-h-40 resize-none overflow-y-auto rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 disabled:cursor-not-allowed disabled:opacity-50"
+        className="flex w-full min-h-[36px] max-h-40 
+        resize-none overflow-y-auto rounded-md 
+        bg-background px-3 py-1 text-sm 
+        transition-colors 
+        placeholder:text-muted-foreground 
+        focus-visible:outline-none 
+        focus-visible:ring-0 
+        disabled:cursor-not-allowed disabled:opacity-50"
       />
       {streaming ? (
         <Button type="button" size="icon" onClick={onStop} title="Stop">
-          <Square className="h-4 w-4" />
+          <Square className="h-4 w-4" fill="white" />
         </Button>
       ) : (
         <Button type="button" size="icon" onClick={onSubmit} title="Send">
@@ -52,4 +59,3 @@ export function ChatInput({
     </div>
   )
 }
-
