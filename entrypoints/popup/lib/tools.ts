@@ -176,24 +176,40 @@ export function buildBrowserTools(opts: { autoRun: boolean }): ToolRegistry {
     const argsCode = args
       .map((a) => (a === undefined ? 'undefined' : JSON.stringify(a)))
       .join(', ')
-    const code = `(${fn.toString()})(${argsCode})`
+    const code = `(
+      async () => {
+        const fn = ${fn.toString()};
+        return await fn(${argsCode});
+      }
+    )()`
     const results = await (browser.tabs as any).executeScript(tabId, { code })
     return Array.isArray(results) ? (results[0] as T) : (results as T)
   }
 
   const getPageContent: ToolDefinition = {
     name: 'get_page_content',
-    description: 'Get text or HTML content of the page or a specific element.',
+    description: 'Get text or HTML content of the page or a specific element, optionally waiting for dynamic content.',
     parameters: {
       type: Type.OBJECT,
       properties: {
         tabId: { type: Type.INTEGER, description: 'Tab id. If omitted, uses active tab.' },
         selector: { type: Type.STRING, description: 'Optional CSS selector to scope the content.' },
+        waitForSelector: { type: Type.STRING, description: 'Wait until this selector is found before reading content.' },
+        waitForSelectorTimeoutMs: { type: Type.INTEGER, description: 'Max milliseconds to wait for waitForSelector before giving up (default 8000).' },
+        waitMs: { type: Type.INTEGER, description: 'Additional milliseconds to wait before capturing content.' },
         html: { type: Type.BOOLEAN, description: 'If true, return HTML instead of text.' },
         maxLen: { type: Type.INTEGER, description: 'Optional max length of returned content.' },
       },
     },
-    handler: async ({ tabId, selector, html = false, maxLen }) => {
+    handler: async ({
+      tabId,
+      selector,
+      waitForSelector,
+      waitForSelectorTimeoutMs,
+      waitMs,
+      html = false,
+      maxLen,
+    }) => {
       mustAllow()
       let tid: number | undefined = tabId
       if (!isValidId(tid)) {
@@ -201,13 +217,54 @@ export function buildBrowserTools(opts: { autoRun: boolean }): ToolRegistry {
         tid = active?.id ?? undefined
       }
       if (!isValidId(tid)) return { ok: false, error: 'No valid tabId' }
-      const res = await runInTab(tid, (sel?: string, asHtml?: boolean, cap?: number) => {
-        const root = sel ? document.querySelector(sel) : document.documentElement
-        if (!root) return { ok: false, error: 'Selector not found' }
-        const content = asHtml ? (root as HTMLElement).outerHTML : (root as HTMLElement).innerText
-        const out = typeof cap === 'number' && cap > 0 ? content.slice(0, cap) : content
-        return { ok: true, content: out, length: content.length }
-      }, [selector ?? undefined, Boolean(html), typeof maxLen === 'number' ? maxLen : undefined])
+      const res = await runInTab(
+        tid,
+        async (
+          sel?: string,
+          asHtml?: boolean,
+          cap?: number,
+          waitSel?: string,
+          waitSelTimeoutMs?: number,
+          waitExtraMs?: number
+        ) => {
+          const sleep = (ms: number) =>
+            new Promise((resolve) => setTimeout(resolve, Math.max(0, ms)))
+
+          if (typeof waitExtraMs === 'number' && waitExtraMs > 0) {
+            await sleep(waitExtraMs)
+          }
+
+          if (waitSel) {
+            const timeout = typeof waitSelTimeoutMs === 'number' && waitSelTimeoutMs > 0 ? waitSelTimeoutMs : 8000
+            const start = Date.now()
+            let found: Element | null = null
+            while (Date.now() - start < timeout) {
+              found = document.querySelector(waitSel)
+              if (found) break
+              await sleep(100)
+            }
+            if (!found) {
+              return { ok: false, error: 'waitForSelector timeout' }
+            }
+          }
+
+          const root = sel ? document.querySelector(sel) : document.documentElement
+          if (!root) return { ok: false, error: 'Selector not found' }
+          const content = asHtml
+            ? (root as HTMLElement).outerHTML
+            : (root as HTMLElement).innerText
+          const out = typeof cap === 'number' && cap > 0 ? content.slice(0, cap) : content
+          return { ok: true, content: out, length: content.length }
+        },
+        [
+          selector ?? undefined,
+          Boolean(html),
+          typeof maxLen === 'number' ? maxLen : undefined,
+          waitForSelector ?? undefined,
+          typeof waitForSelectorTimeoutMs === 'number' ? waitForSelectorTimeoutMs : undefined,
+          typeof waitMs === 'number' ? waitMs : undefined,
+        ]
+      )
       return res
     },
   }
