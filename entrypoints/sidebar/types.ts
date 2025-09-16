@@ -1,3 +1,5 @@
+import { ToolEvent } from "@/lib/genai"
+
 export type TabCtx = {
   id?: number
   title?: string
@@ -5,7 +7,7 @@ export type TabCtx = {
   favIconUrl?: string
 }
 
-export type TimelineKind = 'user' | 'ai' | 'thinking' | 'tool'
+export type TimelineKind = "user" | "ai" | "thinking" | "tool"
 
 export type TimelineEntryBase = {
   id: string
@@ -13,30 +15,34 @@ export type TimelineEntryBase = {
 }
 
 export type UserMessageEntry = TimelineEntryBase & {
-  kind: 'user'
+  kind: "user"
   text: string
   ctxTabs?: TabCtx[]
+  toolEvents?: import("@/lib/genai").ToolEvent[]
 }
 
 export type AiMessageEntry = TimelineEntryBase & {
-  kind: 'ai'
+  kind: "ai"
   text: string
-  toolEvents?: import('@/lib/genai').ToolEvent[]
+  toolEvents?: import("@/lib/genai").ToolEvent[]
 }
 
 export type ThinkingEntry = TimelineEntryBase & {
-  kind: 'thinking'
+  kind: "thinking"
   text: string
+  toolEvents?: import("@/lib/genai").ToolEvent[]
 }
 
 export type ToolTimelineEntry = TimelineEntryBase & {
-  kind: 'tool'
+  kind: "tool"
   displayName?: string
   name: string
   args: any
-  status: 'calling' | 'done'
+  status: "calling" | "done"
   result?: any
   error?: string
+  toolEvents?: ToolEvent[]
+  text?: string
 }
 
 export type ChatEntry =

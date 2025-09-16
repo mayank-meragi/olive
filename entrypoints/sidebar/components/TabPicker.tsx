@@ -16,7 +16,7 @@ export function TabPicker({
   onOpenChange: (v: boolean) => void
   onToggle: (id: number) => void
   allTabs: Array<browser.tabs.Tab>
-  setAllTabs: (tabs: Array<browser.tabs.Tab>) => void
+  setAllTabs: React.Dispatch<React.SetStateAction<Array<browser.tabs.Tab>>>
   selectedTabIds: Set<number>
   anchor: React.ReactNode
 }) {
@@ -146,4 +146,3 @@ export function TabPicker({
     </Popover>
   )
 }
-
