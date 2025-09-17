@@ -20,8 +20,13 @@ TASKS TOOLS:
   - You have tools regarding tasks management. You can create, update, and delete tasks and subtasks.
   - Use these tools to help users manage their tasks effectively.
   - When a users requirement involves multi step actions, break them down into tasks and subtasks.
-  - The main objective becomes the task, and the steps to achieve it become subtasks.
+  - If it involves multiple different tasks, then create a task for each of them, 
+  and the actions become the subtasks
+  - Else each action can be a task by itself.
   - Regularly update the status of tasks and subtasks as you progress through them.
+  - Continue working till all the tasks are completed.
+  - Always call the list_tasks tool to get the latest list of tasks before creating, 
+  updating or deleting tasks or subtasks.
     `,
   },
 ]

@@ -3,7 +3,17 @@ import type { ToolRegistry, ToolDefinition } from './genai'
 
 export type TaskCreationInput = {
   title: string
-  parentTaskId?: string
+  completed?: boolean
+  subtasks?: Array<{ title: string; completed?: boolean }>
+}
+
+export type TaskBatchCreationInput = {
+  tasks: TaskCreationInput[]
+}
+
+export type SubtaskCreationInput = {
+  taskId: string
+  title: string
   completed?: boolean
 }
 
@@ -18,10 +28,23 @@ export type TaskCompletionInput = {
   done?: boolean
 }
 
+export type TaskListResult = {
+  ok: true
+  tasks: Array<{
+    id: string
+    title: string
+    completed: boolean
+    subtasks: Array<{ id: string; title: string; completed: boolean }>
+  }>
+}
+
 export type TaskToolClient = {
   createTask: (input: TaskCreationInput) => Promise<any>
+  createTasks?: (input: TaskBatchCreationInput) => Promise<any>
+  createSubtask: (input: SubtaskCreationInput) => Promise<any>
   deleteTask: (input: TaskDeletionInput) => Promise<any>
   markTaskDone: (input: TaskCompletionInput) => Promise<any>
+  listTasks: () => Promise<TaskListResult>
 }
 
 function ensureHttpUrl(url: string): string | null {
@@ -410,8 +433,11 @@ export function buildBrowserTools(opts: {
   }
 
   let createTaskTool: ToolDefinition | null = null
+  let createTasksTool: ToolDefinition | null = null
+  let createSubtaskTool: ToolDefinition | null = null
   let deleteTaskTool: ToolDefinition | null = null
   let markTaskDoneTool: ToolDefinition | null = null
+  let listTasksTool: ToolDefinition | null = null
 
   if (opts.taskClient) {
     const taskClient = opts.taskClient
@@ -419,7 +445,7 @@ export function buildBrowserTools(opts: {
       name: 'create_task',
       displayName: 'Create Task',
       description:
-        'Create a task or subtask in the active Olive conversation. Provide parentTaskId to create a subtask.',
+        'Create a task in the active Olive conversation, optionally with subtasks.',
       parameters: {
         type: Type.OBJECT,
         properties: {
@@ -427,25 +453,147 @@ export function buildBrowserTools(opts: {
             type: Type.STRING,
             description: 'Short description of the task or subtask.',
           },
-          parentTaskId: {
-            type: Type.STRING,
-            description: 'Optional id of the parent task when creating a subtask.',
-          },
           completed: {
             type: Type.BOOLEAN,
             description: 'Set true to immediately mark the task/subtask as done.',
           },
+          subtasks: {
+            type: Type.ARRAY,
+            description: 'Optional array of subtasks to create along with the task.',
+            items: {
+              type: Type.OBJECT,
+              properties: {
+                title: {
+                  type: Type.STRING,
+                  description: 'Subtask description.',
+                },
+                completed: {
+                  type: Type.BOOLEAN,
+                  description: 'Set true to mark the subtask done.',
+                },
+              },
+              required: ['title'],
+            },
+          },
         },
         required: ['title'],
       },
-      handler: async ({ title, parentTaskId, completed }) => {
+      handler: async ({ title, completed, subtasks }) => {
         mustAllow()
         return await taskClient.createTask({
           title: String(title ?? ''),
-          parentTaskId: typeof parentTaskId === 'string' ? parentTaskId : undefined,
+          completed: typeof completed === 'boolean' ? completed : undefined,
+          subtasks: Array.isArray(subtasks)
+            ? subtasks.map((entry: any) => ({
+                title: String(entry?.title ?? ''),
+                completed:
+                  typeof entry?.completed === 'boolean' ? entry.completed : undefined,
+              }))
+            : undefined,
+        })
+      },
+    }
+
+    createSubtaskTool = {
+      name: 'create_subtask',
+      displayName: 'Create Subtask',
+      description: 'Create a subtask under an existing task.',
+      parameters: {
+        type: Type.OBJECT,
+        properties: {
+          taskId: {
+            type: Type.STRING,
+            description: 'Parent task id where the subtask should be added.',
+          },
+          title: {
+            type: Type.STRING,
+            description: 'Subtask description.',
+          },
+          completed: {
+            type: Type.BOOLEAN,
+            description: 'Set true to mark the subtask as done immediately.',
+          },
+        },
+        required: ['taskId', 'title'],
+      },
+      handler: async ({ taskId, title, completed }) => {
+        mustAllow()
+        return await taskClient.createSubtask({
+          taskId: String(taskId ?? ''),
+          title: String(title ?? ''),
           completed: typeof completed === 'boolean' ? completed : undefined,
         })
       },
+    }
+
+    if (typeof taskClient.createTasks === 'function') {
+      createTasksTool = {
+        name: 'create_tasks',
+        displayName: 'Create Multiple Tasks',
+        description:
+          'Create multiple tasks (each optionally with subtasks) in a single call.',
+        parameters: {
+          type: Type.OBJECT,
+          properties: {
+            tasks: {
+              type: Type.ARRAY,
+              description: 'Array of task definitions to create.',
+              items: {
+                type: Type.OBJECT,
+                properties: {
+                  title: {
+                    type: Type.STRING,
+                    description: 'Task description.',
+                  },
+                  completed: {
+                    type: Type.BOOLEAN,
+                    description: 'Set true to mark the task done.',
+                  },
+                  subtasks: {
+                    type: Type.ARRAY,
+                    description: 'Optional array of subtasks for this task.',
+                    items: {
+                      type: Type.OBJECT,
+                      properties: {
+                        title: {
+                          type: Type.STRING,
+                          description: 'Subtask description.',
+                        },
+                        completed: {
+                          type: Type.BOOLEAN,
+                          description: 'Set true to mark the subtask done.',
+                        },
+                      },
+                      required: ['title'],
+                    },
+                  },
+                },
+                required: ['title'],
+              },
+            },
+          },
+          required: ['tasks'],
+        },
+        handler: async ({ tasks }) => {
+          mustAllow()
+          return await taskClient.createTasks?.({
+            tasks: Array.isArray(tasks)
+              ? tasks.map((task: any) => ({
+                  title: String(task?.title ?? ''),
+                  completed:
+                    typeof task?.completed === 'boolean' ? task.completed : undefined,
+                  subtasks: Array.isArray(task?.subtasks)
+                    ? task.subtasks.map((sub: any) => ({
+                        title: String(sub?.title ?? ''),
+                        completed:
+                          typeof sub?.completed === 'boolean' ? sub.completed : undefined,
+                      }))
+                    : undefined,
+                }))
+              : [],
+          })
+        },
+      }
     }
 
     deleteTaskTool = {
@@ -507,6 +655,20 @@ export function buildBrowserTools(opts: {
         })
       },
     }
+
+    listTasksTool = {
+      name: 'list_tasks',
+      displayName: 'List Tasks',
+      description: 'List tasks and subtasks for the active conversation.',
+      parameters: {
+        type: Type.OBJECT,
+        properties: {},
+      },
+      handler: async () => {
+        mustAllow()
+        return await taskClient.listTasks()
+      },
+    }
   }
 
   const registry: ToolRegistry = {
@@ -524,8 +686,11 @@ export function buildBrowserTools(opts: {
 
   if (createTaskTool && deleteTaskTool && markTaskDoneTool) {
     registry[createTaskTool.name] = createTaskTool
+    if (createTasksTool) registry[createTasksTool.name] = createTasksTool
+    if (createSubtaskTool) registry[createSubtaskTool.name] = createSubtaskTool
     registry[deleteTaskTool.name] = deleteTaskTool
     registry[markTaskDoneTool.name] = markTaskDoneTool
+    if (listTasksTool) registry[listTasksTool.name] = listTasksTool
   }
 
   return registry

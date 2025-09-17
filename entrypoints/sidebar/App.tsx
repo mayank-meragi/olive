@@ -49,12 +49,6 @@ export default function Sidebar() {
     startNewConversation,
     conversationsReady,
     tasks,
-    addTask,
-    addSubtask,
-    removeTask,
-    removeSubtask,
-    toggleTaskCompletion,
-    toggleSubtaskCompletion,
   } = useChatController()
   const [historyOpen, setHistoryOpen] = useState(false)
 
@@ -136,16 +130,7 @@ export default function Sidebar() {
           <div ref={listRef} className="flex-1 space-y-2 overflow-auto p-3">
             <MessageList messages={messages} />
           </div>
-          <TasksPanel
-            tasks={tasks}
-            onAddTask={addTask}
-            onAddSubtask={addSubtask}
-            onToggleTask={toggleTaskCompletion}
-            onToggleSubtask={toggleSubtaskCompletion}
-            onDeleteTask={removeTask}
-            onDeleteSubtask={removeSubtask}
-            disabled={!conversationsReady}
-          />
+          {tasks.length > 0 && <TasksPanel tasks={tasks} />}
           <ChatComposer
             draft={draft}
             onDraftChange={(value) => setDraft(value)}

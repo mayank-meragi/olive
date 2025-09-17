@@ -383,7 +383,7 @@ export async function generateWithGemini(
     const executed = new Set<string>()
     let iterations = 0
     let lastState = createStreamState()
-    while (iterations++ < 8) {
+    while (true) {
       const state = createStreamState()
       lastState = state
       tryDebug(opts.debug, "[genai] streaming turn", { iteration: iterations })
@@ -515,9 +515,7 @@ export async function generateWithGemini(
           executed.add(execKey)
         }
       }
-      // Loop for potential follow-up generation after tool responses
     }
-    return { text: lastState.text, events }
   }
 
   if (opts.stream) {

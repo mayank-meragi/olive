@@ -277,12 +277,12 @@ export function useChatController() {
   const createTaskNode = useCallback(
     ({
       title,
-      parentTaskId,
       completed,
+      subtasks,
     }: {
       title: string
-      parentTaskId?: string
       completed?: boolean
+      subtasks?: Array<{ title: string; completed?: boolean }>
     }) => {
       const trimmed = (title ?? "").trim()
       if (!trimmed) {
@@ -297,248 +297,277 @@ export function useChatController() {
       }
       const now = Date.now()
       const targetCompleted = Boolean(completed)
-      let success = false
-      let createdTask: Task | undefined
-      let createdSubtask: Task["subtasks"][number] | undefined
-      const nextTasks = mutateTasks((prev) => {
-        if (parentTaskId) {
-          const idx = prev.findIndex((task) => task.id === parentTaskId)
-          if (idx === -1) return prev
-          success = true
-          const parent = prev[idx]
-          const subtask = {
-            id: makeId(),
-            title: trimmed,
-            completed: targetCompleted,
-            createdAt: now,
-            updatedAt: now,
-          }
-          createdSubtask = subtask
-          const updatedParent: Task = {
-            ...parent,
-            subtasks: [...parent.subtasks, subtask],
-            updatedAt: now,
-          }
-          const next = [...prev]
-          next[idx] = updatedParent
-          return next
-        }
-        success = true
-        const task: Task = {
-          id: makeId(),
-          title: trimmed,
-          completed: targetCompleted,
-          createdAt: now,
-          updatedAt: now,
-          subtasks: [],
-        }
-        createdTask = task
-        return [...prev, task]
-      })
-
-      if (!success) {
-        return {
-          ok: false,
-          error: parentTaskId
-            ? "Parent task not found"
-            : "Unable to create task",
-        }
+      const task: Task = {
+        id: makeId(),
+        title: trimmed,
+        completed: targetCompleted,
+        createdAt: now,
+        updatedAt: now,
+        subtasks: Array.isArray(subtasks)
+          ? subtasks
+              .map((entry) => {
+                const subTrim = (entry?.title ?? "").trim()
+                if (!subTrim) return null
+                return {
+                  id: makeId(),
+                  title: subTrim,
+                  completed: Boolean(entry?.completed),
+                  createdAt: now,
+                  updatedAt: now,
+                }
+              })
+              .filter((sub): sub is Task["subtasks"][number] => sub != null)
+          : [],
       }
-
-      return { ok: true, tasks: nextTasks, task: createdTask, subtask: createdSubtask }
+      const nextTasks = mutateTasks((prev) => [...prev, task])
+      return { ok: true, tasks: nextTasks, task }
     },
     [conversationsReady, ensureActiveConversation, mutateTasks]
   )
 
-  const deleteTaskNode = useCallback(
-    ({
-      id,
-      parentTaskId,
-    }: {
-      id: string
-      parentTaskId?: string
-    }) => {
-      if (!id) return { ok: false, error: "Task id is required" }
-      if (!conversationsReady || !activeConversationId) {
-        return { ok: false, error: "No active conversation" }
-      }
-      let success = false
-      let removedTask: Task | undefined
-      let removedSubtask: Task["subtasks"][number] | undefined
-      const nextTasks = mutateTasks((prev) => {
-        if (parentTaskId) {
-          const parentIdx = prev.findIndex((task) => task.id === parentTaskId)
-          if (parentIdx === -1) return prev
-          const parent = prev[parentIdx]
-          const subIdx = parent.subtasks.findIndex((s) => s.id === id)
-          if (subIdx === -1) return prev
-          success = true
-          removedSubtask = parent.subtasks[subIdx]
-          const updatedParent: Task = {
-            ...parent,
-            subtasks: [
-              ...parent.subtasks.slice(0, subIdx),
-              ...parent.subtasks.slice(subIdx + 1),
-            ],
-            updatedAt: Date.now(),
-          }
-          const next = [...prev]
-          next[parentIdx] = updatedParent
-          return next
-        }
-        const idx = prev.findIndex((task) => task.id === id)
-        if (idx === -1) return prev
-        success = true
-        removedTask = prev[idx]
-        return [...prev.slice(0, idx), ...prev.slice(idx + 1)]
-      })
-
-      if (!success) {
-        return {
-          ok: false,
-          error: parentTaskId ? "Subtask not found" : "Task not found",
-        }
-      }
-
-      return { ok: true, tasks: nextTasks, task: removedTask, subtask: removedSubtask }
-    },
-    [
-      mutateTasks,
-      conversationsReady,
-      activeConversationId,
-    ]
-  )
-
-  const setTaskNodeCompletion = useCallback(
-    ({
-      id,
-      parentTaskId,
-      done,
-    }: {
-      id: string
-      parentTaskId?: string
-      done?: boolean
-    }) => {
-      if (!id) return { ok: false, error: "Task id is required" }
+  const addSubtask = useCallback(
+    (taskId: string, title: string, completed?: boolean) => {
+      const trimmed = (title ?? "").trim()
+      if (!trimmed) return { ok: false, error: "Subtask title is required" }
       if (!conversationsReady || !activeConversationId) {
         return { ok: false, error: "No active conversation" }
       }
       const now = Date.now()
       let success = false
-      let updatedTask: Task | undefined
-      let updatedSubtask: Task["subtasks"][number] | undefined
+      let createdSubtask: Task["subtasks"][number] | undefined
       const nextTasks = mutateTasks((prev) => {
-        if (parentTaskId) {
-          const parentIdx = prev.findIndex((task) => task.id === parentTaskId)
-          if (parentIdx === -1) return prev
-          const parent = prev[parentIdx]
-          const subIdx = parent.subtasks.findIndex((s) => s.id === id)
-          if (subIdx === -1) return prev
-          success = true
-          const target = parent.subtasks[subIdx]
-          const nextDone = typeof done === "boolean" ? done : !target.completed
-          const subtask = {
-            ...target,
-            completed: nextDone,
-            updatedAt: now,
-          }
-          updatedSubtask = subtask
-          const updatedParent: Task = {
-            ...parent,
-            subtasks: [
-              ...parent.subtasks.slice(0, subIdx),
-              subtask,
-              ...parent.subtasks.slice(subIdx + 1),
-            ],
-            updatedAt: now,
-          }
-          const next = [...prev]
-          next[parentIdx] = updatedParent
-          return next
-        }
-        const idx = prev.findIndex((task) => task.id === id)
+        const idx = prev.findIndex((task) => task.id === taskId)
         if (idx === -1) return prev
         success = true
-        const task = prev[idx]
-        const nextDone = typeof done === "boolean" ? done : !task.completed
-        const updated = {
-          ...task,
-          completed: nextDone,
+        const parent = prev[idx]
+        const subtask: Task["subtasks"][number] = {
+          id: makeId(),
+          title: trimmed,
+          completed: Boolean(completed),
+          createdAt: now,
           updatedAt: now,
         }
-        updatedTask = updated
+        createdSubtask = subtask
+        const updated: Task = {
+          ...parent,
+          subtasks: [...parent.subtasks, subtask],
+          updatedAt: now,
+        }
         const next = [...prev]
         next[idx] = updated
         return next
       })
 
       if (!success) {
-        return {
-          ok: false,
-          error: parentTaskId ? "Subtask not found" : "Task not found",
-        }
+        return { ok: false, error: "Parent task not found" }
       }
-
-      return { ok: true, tasks: nextTasks, task: updatedTask, subtask: updatedSubtask }
+      return { ok: true, tasks: nextTasks, subtask: createdSubtask }
     },
-    [
-      mutateTasks,
-      conversationsReady,
-      activeConversationId,
-    ]
-  )
-
-  const addTask = useCallback(
-    (title: string) => createTaskNode({ title, completed: false }),
-    [createTaskNode]
-  )
-
-  const addSubtask = useCallback(
-    (taskId: string, title: string) =>
-      createTaskNode({ title, parentTaskId: taskId, completed: false }),
-    [createTaskNode]
+    [mutateTasks, conversationsReady, activeConversationId]
   )
 
   const removeTask = useCallback(
-    (id: string) => deleteTaskNode({ id }),
-    [deleteTaskNode]
+    (id: string) => {
+      if (!id) return { ok: false, error: "Task id is required" }
+      if (!conversationsReady || !activeConversationId) {
+        return { ok: false, error: "No active conversation" }
+      }
+      let success = false
+      const nextTasks = mutateTasks((prev) => {
+        const idx = prev.findIndex((task) => task.id === id)
+        if (idx === -1) return prev
+        success = true
+        return [...prev.slice(0, idx), ...prev.slice(idx + 1)]
+      })
+      if (!success) return { ok: false, error: "Task not found" }
+      return { ok: true, tasks: nextTasks }
+    },
+    [mutateTasks, conversationsReady, activeConversationId]
   )
 
   const removeSubtask = useCallback(
-    (taskId: string, subtaskId: string) =>
-      deleteTaskNode({ id: subtaskId, parentTaskId: taskId }),
-    [deleteTaskNode]
+    (taskId: string, subtaskId: string) => {
+      if (!taskId || !subtaskId) {
+        return { ok: false, error: "Task id and subtask id are required" }
+      }
+      if (!conversationsReady || !activeConversationId) {
+        return { ok: false, error: "No active conversation" }
+      }
+      let success = false
+      const nextTasks = mutateTasks((prev) => {
+        const idx = prev.findIndex((task) => task.id === taskId)
+        if (idx === -1) return prev
+        const parent = prev[idx]
+        const subIdx = parent.subtasks.findIndex((s) => s.id === subtaskId)
+        if (subIdx === -1) return prev
+        success = true
+        const updated: Task = {
+          ...parent,
+          subtasks: [
+            ...parent.subtasks.slice(0, subIdx),
+            ...parent.subtasks.slice(subIdx + 1),
+          ],
+          updatedAt: Date.now(),
+        }
+        const next = [...prev]
+        next[idx] = updated
+        return next
+      })
+      if (!success) return { ok: false, error: "Subtask not found" }
+      return { ok: true, tasks: nextTasks }
+    },
+    [mutateTasks, conversationsReady, activeConversationId]
+  )
+
+  const addTask = useCallback(
+    (title: string, subtasks?: Array<{ title: string; completed?: boolean }>) =>
+      createTaskNode({ title, completed: false, subtasks }),
+    [createTaskNode]
+  )
+
+  const addTasksBatch = useCallback(
+    (tasksBatch: Array<{ title: string; completed?: boolean; subtasks?: Array<{ title: string; completed?: boolean }> }>) => {
+      if (!tasksBatch.length) return { ok: true, tasks }
+      if (!conversationsReady) return { ok: false, error: "Conversation state not ready" }
+      const convId = ensureActiveConversation()
+      if (!convId) return { ok: false, error: "Unable to resolve conversation" }
+      let next = tasks
+      for (const entry of tasksBatch) {
+        const { title, completed, subtasks } = entry ?? {}
+        const result = createTaskNode({ title: title ?? "", completed, subtasks })
+        if (!result.ok) return result
+        next = result.tasks
+      }
+      return { ok: true, tasks: next }
+    },
+    [tasks, conversationsReady, ensureActiveConversation, createTaskNode]
   )
 
   const toggleTaskCompletion = useCallback(
-    (id: string, done?: boolean) => setTaskNodeCompletion({ id, done }),
-    [setTaskNodeCompletion]
+    (id: string, done?: boolean) => {
+      if (!id) return { ok: false, error: "Task id is required" }
+      if (!conversationsReady || !activeConversationId) {
+        return { ok: false, error: "No active conversation" }
+      }
+      const now = Date.now()
+      let success = false
+      const nextTasks = mutateTasks((prev) => {
+        const idx = prev.findIndex((task) => task.id === id)
+        if (idx === -1) return prev
+        success = true
+        const task = prev[idx]
+        const nextDone = typeof done === "boolean" ? done : !task.completed
+        const updated: Task = {
+          ...task,
+          completed: nextDone,
+          updatedAt: now,
+        }
+        const next = [...prev]
+        next[idx] = updated
+        return next
+      })
+      if (!success) return { ok: false, error: "Task not found" }
+      return { ok: true, tasks: nextTasks }
+    },
+    [mutateTasks, conversationsReady, activeConversationId]
   )
 
   const toggleSubtaskCompletion = useCallback(
-    (taskId: string, subtaskId: string, done?: boolean) =>
-      setTaskNodeCompletion({ id: subtaskId, parentTaskId: taskId, done }),
-    [setTaskNodeCompletion]
+    (taskId: string, subtaskId: string, done?: boolean) => {
+      if (!taskId || !subtaskId) {
+        return { ok: false, error: "Task id and subtask id are required" }
+      }
+      if (!conversationsReady || !activeConversationId) {
+        return { ok: false, error: "No active conversation" }
+      }
+      const now = Date.now()
+      let success = false
+      const nextTasks = mutateTasks((prev) => {
+        const idx = prev.findIndex((task) => task.id === taskId)
+        if (idx === -1) return prev
+        const parent = prev[idx]
+        const subIdx = parent.subtasks.findIndex((s) => s.id === subtaskId)
+        if (subIdx === -1) return prev
+        success = true
+        const sub = parent.subtasks[subIdx]
+        const nextDone = typeof done === "boolean" ? done : !sub.completed
+        const updatedSub = {
+          ...sub,
+          completed: nextDone,
+          updatedAt: now,
+        }
+        const updatedParent: Task = {
+          ...parent,
+          subtasks: [
+            ...parent.subtasks.slice(0, subIdx),
+            updatedSub,
+            ...parent.subtasks.slice(subIdx + 1),
+          ],
+          updatedAt: now,
+        }
+        const next = [...prev]
+        next[idx] = updatedParent
+        return next
+      })
+      if (!success) return { ok: false, error: "Subtask not found" }
+      return { ok: true, tasks: nextTasks }
+    },
+    [mutateTasks, conversationsReady, activeConversationId]
   )
+
+  const listTasks = useCallback(() => {
+    return {
+      ok: true,
+      tasks: tasks.map((task) => ({
+        id: task.id,
+        title: task.title,
+        completed: task.completed,
+        subtasks: task.subtasks.map((sub) => ({
+          id: sub.id,
+          title: sub.title,
+          completed: sub.completed,
+        })),
+      })),
+    }
+  }, [tasks])
 
   const taskToolClient = useMemo(
     () => ({
       createTask: async ({
         title,
-        parentTaskId,
         completed,
+        subtasks,
       }: {
         title: string
-        parentTaskId?: string
         completed?: boolean
-      }) => createTaskNode({ title, parentTaskId, completed }),
+        subtasks?: Array<{ title: string; completed?: boolean }>
+      }) => createTaskNode({ title, completed, subtasks }),
+      createTasks: async ({
+        tasks: batch,
+      }: {
+        tasks: Array<{
+          title: string
+          completed?: boolean
+          subtasks?: Array<{ title: string; completed?: boolean }>
+        }>
+      }) => addTasksBatch(Array.isArray(batch) ? batch : []),
+      createSubtask: async ({
+        taskId,
+        title,
+        completed,
+      }: {
+        taskId: string
+        title: string
+        completed?: boolean
+      }) => addSubtask(taskId, title, completed),
       deleteTask: async ({
         taskId,
         parentTaskId,
       }: {
         taskId: string
         parentTaskId?: string
-      }) => deleteTaskNode({ id: taskId, parentTaskId }),
+      }) =>
+        parentTaskId ? removeSubtask(parentTaskId, taskId) : removeTask(taskId),
       markTaskDone: async ({
         taskId,
         parentTaskId,
@@ -547,9 +576,21 @@ export function useChatController() {
         taskId: string
         parentTaskId?: string
         done?: boolean
-      }) => setTaskNodeCompletion({ id: taskId, parentTaskId, done }),
+      }) =>
+        parentTaskId
+          ? toggleSubtaskCompletion(parentTaskId, taskId, done)
+          : toggleTaskCompletion(taskId, done),
+      listTasks: async () => listTasks(),
     }),
-    [createTaskNode, deleteTaskNode, setTaskNodeCompletion]
+    [
+      createTaskNode,
+      addSubtask,
+      removeTask,
+      removeSubtask,
+      toggleTaskCompletion,
+      toggleSubtaskCompletion,
+      listTasks,
+    ]
   )
 
   const send = useCallback(
