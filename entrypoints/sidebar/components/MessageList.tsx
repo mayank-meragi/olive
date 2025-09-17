@@ -1,10 +1,11 @@
 import React from 'react'
-import type { ChatEntry } from '../types'
 import { MessageItem } from './MessageItem'
 import { ThinkingItem } from './ThinkingItem'
 import { ToolEventItem } from './ToolEventItem'
+import { useChatControllerContext } from '../context/ChatControllerContext'
 
-export function MessageList({ messages }: { messages: ChatEntry[] }) {
+export function MessageList() {
+  const { messages } = useChatControllerContext()
   if (messages.length === 0) {
     return (
       <div className="text-center text-xs text-muted-foreground">

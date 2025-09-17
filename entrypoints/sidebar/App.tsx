@@ -4,7 +4,7 @@ import { useState } from "react"
 import { ChatComposer } from "./components/ChatComposer"
 import { MessageList } from "./components/MessageList"
 import { TasksPanel } from "./components/TasksPanel"
-import { useChatController } from "./hooks/useChatController"
+import { ChatControllerProvider, useChatControllerContext } from "./context/ChatControllerContext"
 
 function formatConversationTime(timestamp?: number) {
   if (!timestamp) return ""
@@ -21,35 +21,24 @@ function formatConversationTime(timestamp?: number) {
 }
 
 export default function Sidebar() {
+  return (
+    <ChatControllerProvider>
+      <SidebarContent />
+    </ChatControllerProvider>
+  )
+}
+
+function SidebarContent() {
   const {
-    messages,
-    draft,
-    setDraft,
     listRef,
-    textareaRef,
     streaming,
-    model,
-    setModel,
-    thinking,
-    setThinking,
-    autoRunTools,
-    setAutoRunTools,
-    tabPickerOpen,
-    setTabPickerOpen,
-    allTabs,
-    setAllTabs,
-    selectedTabIds,
-    toggleTabSelection,
-    removeSelectedTab,
-    handleSubmit,
-    handleStop,
     conversations,
     activeConversationId,
     selectConversation,
     startNewConversation,
     conversationsReady,
     tasks,
-  } = useChatController()
+  } = useChatControllerContext()
   const [historyOpen, setHistoryOpen] = useState(false)
 
   return (
@@ -128,30 +117,10 @@ export default function Sidebar() {
       ) : (
         <>
           <div ref={listRef} className="flex-1 space-y-2 overflow-auto p-3">
-            <MessageList messages={messages} />
+            <MessageList />
           </div>
-          {tasks.length > 0 && <TasksPanel tasks={tasks} />}
-          <ChatComposer
-            draft={draft}
-            onDraftChange={(value) => setDraft(value)}
-            streaming={streaming}
-            onSubmit={handleSubmit}
-            onStop={handleStop}
-            textareaRef={textareaRef}
-            tabPickerOpen={tabPickerOpen}
-            onTabPickerOpenChange={(open) => setTabPickerOpen(open)}
-            allTabs={allTabs}
-            setAllTabs={setAllTabs}
-            selectedTabIds={selectedTabIds}
-            onToggleTab={toggleTabSelection}
-            onRemoveTab={removeSelectedTab}
-            model={model}
-            onModelChange={(value) => setModel(value)}
-            thinking={thinking}
-            onThinkingToggle={(value) => setThinking(value)}
-            autoRunTools={autoRunTools}
-            onAutoRunToolsToggle={(value) => setAutoRunTools(value)}
-          />
+          {tasks.length > 0 && <TasksPanel />}
+          <ChatComposer />
         </>
       )}
     </div>

@@ -5,15 +5,10 @@ import {
   CollapsibleTrigger,
 } from '@/components/ui/collapsible'
 import { BadgeCheck, ChevronDown, Circle } from 'lucide-react'
-import type { Task } from '../types'
+import { useChatControllerContext } from '../context/ChatControllerContext'
 
-type TasksPanelProps = {
-  tasks: Task[]
-}
-
-export function TasksPanel({
-  tasks,
-}: TasksPanelProps) {
+export function TasksPanel() {
+  const { tasks } = useChatControllerContext()
   const [open, setOpen] = useState(() => tasks.length > 0)
   const prevCountRef = useRef(tasks.length)
 

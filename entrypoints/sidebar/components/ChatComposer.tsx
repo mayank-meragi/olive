@@ -6,53 +6,33 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { Switch } from "@/components/ui/switch"
-import { useMemo, type Dispatch, type SetStateAction } from "react"
+import { useMemo } from "react"
 import { ChatInput } from "./ChatInput"
 import { TabPicker } from "./TabPicker"
+import { useChatControllerContext } from "../context/ChatControllerContext"
 
-type ChatComposerProps = {
-  draft: string
-  onDraftChange: (value: string) => void
-  streaming: boolean
-  onSubmit: (value: string) => void
-  onStop: () => void
-  textareaRef: React.RefObject<HTMLTextAreaElement>
-  tabPickerOpen: boolean
-  onTabPickerOpenChange: (open: boolean) => void
-  allTabs: Array<Browser.tabs.Tab>
-  setAllTabs: Dispatch<SetStateAction<Array<Browser.tabs.Tab>>>
-  selectedTabIds: Set<number>
-  onToggleTab: (id: number) => void
-  onRemoveTab: (id: number) => void
-  model: string
-  onModelChange: (value: string) => void
-  thinking: boolean
-  onThinkingToggle: (value: boolean) => void
-  autoRunTools: boolean
-  onAutoRunToolsToggle: (value: boolean) => void
-}
-
-export function ChatComposer({
-  draft,
-  onDraftChange,
-  streaming,
-  onSubmit,
-  onStop,
-  textareaRef,
-  tabPickerOpen,
-  onTabPickerOpenChange,
-  allTabs,
-  setAllTabs,
-  selectedTabIds,
-  onToggleTab,
-  onRemoveTab,
-  model,
-  onModelChange,
-  thinking,
-  onThinkingToggle,
-  autoRunTools,
-  onAutoRunToolsToggle,
-}: ChatComposerProps) {
+export function ChatComposer() {
+  const {
+    draft,
+    setDraft,
+    streaming,
+    handleSubmit,
+    handleStop,
+    textareaRef,
+    tabPickerOpen,
+    setTabPickerOpen,
+    allTabs,
+    setAllTabs,
+    selectedTabIds,
+    toggleTabSelection,
+    removeSelectedTab,
+    model,
+    setModel,
+    thinking,
+    setThinking,
+    autoRunTools,
+    setAutoRunTools,
+  } = useChatControllerContext()
   const selectedTabs = useMemo(
     () => allTabs.filter((t) => (t.id ? selectedTabIds.has(t.id) : false)),
     [allTabs, selectedTabIds]
@@ -63,25 +43,25 @@ export function ChatComposer({
       className="sticky bottom-0 m-2 rounded-lg border bg-background p-2"
       onSubmit={(e) => {
         e.preventDefault()
-        onSubmit(draft)
+        handleSubmit(draft)
       }}
     >
       <TabPicker
         open={tabPickerOpen}
-        onOpenChange={onTabPickerOpenChange}
+        onOpenChange={setTabPickerOpen}
         allTabs={allTabs}
         setAllTabs={setAllTabs}
         selectedTabIds={selectedTabIds}
-        onToggle={onToggleTab}
+        onToggle={toggleTabSelection}
         anchor={
           <ChatInput
             draft={draft}
-            setDraft={onDraftChange}
+            setDraft={setDraft}
             streaming={streaming}
-            onSubmit={() => onSubmit(draft)}
-            onStop={onStop}
+            onSubmit={() => handleSubmit(draft)}
+            onStop={handleStop}
             textareaRef={textareaRef}
-            onAtTrigger={() => onTabPickerOpenChange(true)}
+            onAtTrigger={() => setTabPickerOpen(true)}
           />
         }
       />
@@ -105,7 +85,7 @@ export function ChatComposer({
                 type="button"
                 className="ml-1 text-muted-foreground hover:text-foreground"
                 onClick={() => {
-                  if (t.id != null) onRemoveTab(t.id)
+                  if (t.id != null) removeSelectedTab(t.id)
                 }}
               >
                 ×
@@ -116,7 +96,7 @@ export function ChatComposer({
       )}
       <div className="mt-2 flex items-center justify-between gap-2">
         <div className="flex w-[70%] items-center gap-2">
-          <Select value={model} onValueChange={onModelChange}>
+          <Select value={model} onValueChange={setModel}>
             <SelectTrigger className="border-none text-xs text-muted-foreground">
               <SelectValue placeholder="Select model" />
             </SelectTrigger>
@@ -130,14 +110,14 @@ export function ChatComposer({
           <span className="text-xs text-muted-foreground">Thinking</span>
           <Switch
             checked={thinking}
-            onCheckedChange={(v) => onThinkingToggle(Boolean(v))}
+            onCheckedChange={(v) => setThinking(Boolean(v))}
           />
         </div>
         <div className="flex items-center gap-2">
           <span className="text-xs text-muted-foreground">Auto-run tools</span>
           <Switch
             checked={autoRunTools}
-            onCheckedChange={(v) => onAutoRunToolsToggle(Boolean(v))}
+            onCheckedChange={(v) => setAutoRunTools(Boolean(v))}
           />
         </div>
       </div>
