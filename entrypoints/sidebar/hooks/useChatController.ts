@@ -38,6 +38,14 @@ export function useChatController() {
   const [messages, setMessages] = useState<ChatEntry[]>([])
   const [draft, setDraft] = useState("")
   const [tasks, setTasks] = useState<Task[]>([])
+  const tasksRef = useRef<Task[]>([])
+  const setTasksState = useCallback(
+    (next: Task[]) => {
+      tasksRef.current = next
+      setTasks(next)
+    },
+    [setTasks]
+  )
   const listRef = useRef<HTMLDivElement | null>(null)
   const textareaRef = useRef<HTMLTextAreaElement | null>(null)
   const [model, setModel] = useStorageSync<string>(
@@ -66,6 +74,10 @@ export function useChatController() {
   useTextareaAutoResize(textareaRef, draft)
 
   useEffect(() => {
+    tasksRef.current = tasks
+  }, [tasks])
+
+  useEffect(() => {
     if (!conversationsReady) return
     if (initialisedConversationRef.current) return
     initialisedConversationRef.current = true
@@ -83,15 +95,15 @@ export function useChatController() {
         },
       ])
       setActiveConversationId(newId)
-      setTasks([])
+      setTasksState([])
       return
     }
 
     const firstConversation = conversations[0]
     setActiveConversationId(firstConversation.id)
     setMessages(firstConversation.messages ?? [])
-    setTasks(firstConversation.tasks ?? [])
-  }, [conversationsReady, conversations, setConversations])
+    setTasksState(firstConversation.tasks ?? [])
+  }, [conversationsReady, conversations, setConversations, setTasksState])
 
   useEffect(() => {
     if (!conversationsReady) return
@@ -106,7 +118,7 @@ export function useChatController() {
     if (fallback) {
       setActiveConversationId(fallback.id)
       setMessages(fallback.messages ?? [])
-      setTasks(fallback.tasks ?? [])
+      setTasksState(fallback.tasks ?? [])
     } else {
       const newId = makeId()
       const now = Date.now()
@@ -121,9 +133,15 @@ export function useChatController() {
       ])
       setActiveConversationId(newId)
       setMessages([])
-      setTasks([])
+      setTasksState([])
     }
-  }, [conversationsReady, conversations, activeConversationId, setConversations])
+  }, [
+    conversationsReady,
+    conversations,
+    activeConversationId,
+    setConversations,
+    setTasksState,
+  ])
 
   useEffect(() => {
     if (!conversationsReady) return
@@ -142,7 +160,7 @@ export function useChatController() {
         !current ||
         current.messages !== messages ||
         current.title !== nextTitle ||
-        current.tasks !== tasks
+        current.tasks !== tasksRef.current
       if (!needsUpdate) return prev
 
       const updatedConversation: Conversation = {
@@ -150,7 +168,7 @@ export function useChatController() {
         title: nextTitle,
         messages,
         updatedAt: Date.now(),
-        tasks,
+        tasks: tasksRef.current,
       }
 
       if (!current) {
@@ -200,7 +218,7 @@ export function useChatController() {
     const newId = makeId()
     const now = Date.now()
     setActiveConversationId(newId)
-    setTasks([])
+    setTasksState([])
     setConversations((prev) => [
       {
         id: newId,
@@ -216,7 +234,7 @@ export function useChatController() {
     activeConversationId,
     conversationsReady,
     setActiveConversationId,
-    setTasks,
+    setTasksState,
     setConversations,
   ])
 
@@ -227,7 +245,7 @@ export function useChatController() {
     setActiveConversationId(newId)
     setMessages([])
     setDraft("")
-    setTasks([])
+    setTasksState([])
     setConversations((prev) => [
       {
         id: newId,
@@ -238,7 +256,13 @@ export function useChatController() {
       },
       ...prev,
     ])
-  }, [conversationsReady, setConversations, setMessages, setDraft, setTasks])
+  }, [
+    conversationsReady,
+    setConversations,
+    setMessages,
+    setDraft,
+    setTasksState,
+  ])
 
   const selectConversation = useCallback(
     (id: string) => {
@@ -249,7 +273,7 @@ export function useChatController() {
       setActiveConversationId(conversation.id)
       setMessages(conversation.messages ?? [])
       setDraft("")
-      setTasks(conversation.tasks ?? [])
+      setTasksState(conversation.tasks ?? [])
     },
     [
       conversations,
@@ -257,21 +281,25 @@ export function useChatController() {
       conversationsReady,
       setMessages,
       setDraft,
-      setTasks,
+      setTasksState,
     ]
   )
 
   const mutateTasks = useCallback(
     (mutator: (prev: Task[]) => Task[]) => {
-      let snapshot: Task[] = []
+      let snapshot: Task[] | null = null
       setTasks((prev) => {
         const result = mutator(prev)
         snapshot = result
         return result
       })
-      return snapshot
+      if (snapshot) {
+        tasksRef.current = snapshot
+        return snapshot
+      }
+      return tasksRef.current
     },
-    [setTasks]
+    []
   )
 
   const createTaskNode = useCallback(
@@ -516,9 +544,15 @@ export function useChatController() {
   )
 
   const listTasks = useCallback(() => {
+    if (!conversationsReady) {
+      return { ok: true, tasks: [] as Task[] }
+    }
+    const currentId = activeConversationId ?? ensureActiveConversation()
+    const activeConversation = conversations.find((c) => c.id === currentId)
+    const source = activeConversation?.tasks ?? tasksRef.current
     return {
       ok: true,
-      tasks: tasks.map((task) => ({
+      tasks: source.map((task) => ({
         id: task.id,
         title: task.title,
         completed: task.completed,
@@ -529,7 +563,30 @@ export function useChatController() {
         })),
       })),
     }
-  }, [tasks])
+  }, [
+    conversationsReady,
+    activeConversationId,
+    ensureActiveConversation,
+    conversations,
+    tasksRef,
+  ])
+
+  const buildTaskListText = useCallback(() => {
+    const { tasks } = listTasks()
+    if (!tasks.length) return 'Current Task List: (none)'
+    const lines: string[] = []
+    tasks.forEach((task, idx) => {
+      lines.push(`${idx + 1}. ${task.completed ? '[x]' : '[ ]'} ${task.title}`)
+      if (task.subtasks.length) {
+        task.subtasks.forEach((sub, subIdx) => {
+          lines.push(
+            `    ${idx + 1}.${subIdx + 1} ${sub.completed ? '[x]' : '[ ]'} ${sub.title}`,
+          )
+        })
+      }
+    })
+    return `Current Task List (latest):\n${lines.join('\n')}`
+  }, [listTasks])
 
   const taskToolClient = useMemo(
     () => ({
@@ -647,17 +704,18 @@ export function useChatController() {
       pendingToolIdsRef.current = []
 
       try {
-        const { events } = await runChat({
-          prompt: fullPrompt,
-          model,
-          thinkingEnabled: thinking,
-          autoRunTools,
-          history: historyForModel,
-          taskClient: taskToolClient,
-          callbacks: {
-            onToolCall: (ev) => {
-              const toolId = makeId()
-              pendingToolIdsRef.current.push({ id: toolId, name: ev.name })
+      const { events } = await runChat({
+        prompt: fullPrompt,
+        model,
+        thinkingEnabled: thinking,
+        autoRunTools,
+        history: historyForModel,
+      taskClient: taskToolClient,
+      systemInstructionExtras: [{ text: buildTaskListText() }],
+      callbacks: {
+          onToolCall: (ev) => {
+            const toolId = makeId()
+            pendingToolIdsRef.current.push({ id: toolId, name: ev.name })
               setMessages((prev) => [
                 ...prev,
                 {
@@ -800,6 +858,7 @@ export function useChatController() {
       ensureActiveConversation,
       conversationsReady,
       taskToolClient,
+      buildTaskListText,
     ]
   )
 

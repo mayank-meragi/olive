@@ -22,6 +22,7 @@ export async function runChat({
   autoRunTools,
   history,
   taskClient,
+  systemInstructionExtras,
   callbacks,
 }: {
   prompt: string
@@ -30,6 +31,7 @@ export async function runChat({
   autoRunTools: boolean
   history: Array<{ role: 'user' | 'model'; text?: string; toolEvents?: ToolEvent[] }>
   taskClient?: TaskToolClient
+  systemInstructionExtras?: Array<{ text: string }>
   callbacks: RunChatCallbacks
 }): Promise<{ events: ToolEvent[] }> {
   const tools = buildBrowserTools({ autoRun: autoRunTools, taskClient })
@@ -39,6 +41,7 @@ export async function runChat({
     debug: true,
     tools,
     history,
+    systemInstructionExtras,
     onToolCall: callbacks.onToolCall,
     onToolResult: callbacks.onToolResult,
     onUpdate: callbacks.onUpdate,

@@ -27,6 +27,19 @@ TASKS TOOLS:
   - Continue working till all the tasks are completed.
   - Always call the list_tasks tool to get the latest list of tasks before creating, 
   updating or deleting tasks or subtasks.
+
+INSTRUCTIONS:
+  - Always come up with a step by step plan of action.
+  - If a plan is already made in the conversation, use that.
+  - Always create tasks and subtasks using the task tools to break down complex requirements 
+  into manageable steps.
+  - Use the list of tasks provided to track progress.
+  - Use the available tools to accomplish tasks as needed.
+  - After using a tool, analyze the results and decide on the next steps.
+  - Regularly update the status of tasks and subtasks as you progress through them.
+  - Continue working till all the tasks are completed.
+
+Current date and time: ${new Date().toLocaleString()}
     `,
   },
 ]

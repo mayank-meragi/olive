@@ -24,6 +24,8 @@ export type GenerateOptions = {
     text?: string
     toolEvents?: ToolEvent[]
   }>
+  // Optional additional system instructions to append dynamically
+  systemInstructionExtras?: Array<{ text: string }>
   // Live tool-call hooks for UI ordering
   onToolCall?: (ev: { name: string; displayName?: string; args: any }) => void
   onToolResult?: (ev: {
@@ -351,7 +353,10 @@ export async function generateWithGemini(
 
   const thinkingConfig = resolveThinkingConfig(opts)
   const config: any = {
-    systemInstruction: SYSTEM_INSTRUCTIONS,
+    systemInstruction: [
+      ...SYSTEM_INSTRUCTIONS,
+      ...(opts.systemInstructionExtras ?? []),
+    ],
   }
   if (thinkingConfig) config.thinkingConfig = thinkingConfig
 
@@ -459,10 +464,6 @@ export async function generateWithGemini(
           if (typeof args === "string") args = JSON.parse(args)
         } catch {}
         const execKey = `${name}|${JSON.stringify(args ?? {})}`
-        if (executed.has(execKey)) {
-          tryDebug(opts.debug, "[genai] skipping duplicate tool call", { name })
-          continue
-        }
         try {
           const result = await def.handler(args, {})
           events.push({
