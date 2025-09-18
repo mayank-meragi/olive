@@ -229,21 +229,8 @@ export function createTaskTools({
     },
   }
 
-  tools.list_tasks = {
-    name: "list_tasks",
-    displayName: "List Tasks",
-    description: "List tasks and subtasks for the active conversation.",
-    parameters: {
-      type: Type.OBJECT,
-      properties: {},
-    },
-    handler: async () => {
-      mustAllow()
-      const tasks = await taskClient.listTasks()
-      console.log("Listed tasks", tasks)
-      return tasks
-    },
-  }
+  // Intentionally no list_tasks tool. The model receives an up-to-date
+  // task context via system instructions.
 
   return tools
 }

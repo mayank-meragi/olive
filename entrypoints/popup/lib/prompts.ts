@@ -25,8 +25,7 @@ TASKS TOOLS:
   - Else each action can be a task by itself.
   - Regularly update the status of tasks and subtasks as you progress through them.
   - Continue working till all the tasks are completed.
-  - Always call the list_tasks tool to get the latest list of tasks before creating, 
-  updating or deleting tasks or subtasks.
+  - Keep your internal task list synchronized; rely on the provided task context.
 
 INSTRUCTIONS:
   - Always come up with a step by step plan of action.
