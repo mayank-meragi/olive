@@ -1114,6 +1114,26 @@ export function useChatController() {
     stopRequested.current = true
   }, [])
 
+  const editAndResendUserMessage = useCallback(
+    (id: string, newText: string) => {
+      const trimmed = (newText ?? "").trim()
+      if (!trimmed) return
+      if (!conversationsReady) return
+      // Truncate all messages from the specified user message onward
+      setMessages((prev) => {
+        const idx = prev.findIndex((e) => e.id === id && e.kind === "user")
+        if (idx === -1) return prev
+        return prev.slice(0, idx)
+      })
+      setDraft("")
+      // Defer send to allow state to apply so history is rebuilt from truncated messages
+      setTimeout(() => {
+        void send(trimmed)
+      }, 0)
+    },
+    [conversationsReady, send]
+  )
+
   return {
     messages,
     draft,
@@ -1136,6 +1156,7 @@ export function useChatController() {
     removeSelectedTab,
     handleSubmit,
     handleStop,
+    editAndResendUserMessage,
     conversations,
     activeConversationId,
     selectConversation,
