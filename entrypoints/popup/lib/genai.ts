@@ -1,4 +1,5 @@
 import { SYSTEM_INSTRUCTIONS } from './prompts'
+import { getLatestTaskInstruction } from './taskContext'
 import { createGeminiClient, getDefaultModel } from './ai/client'
 import { tryDebug } from './ai/debug'
 import { buildHistoryContents } from './ai/history'
@@ -33,25 +34,8 @@ export async function generateWithGemini(
 
   const thinkingConfig = resolveThinkingConfig(opts)
 
-  const resolveTaskContext = async () => {
-    if (!opts.taskContext) return undefined
-    try {
-      const text =
-        typeof opts.taskContext === 'function'
-          ? await opts.taskContext()
-          : opts.taskContext
-      const trimmed = typeof text === 'string' ? text.trim() : ''
-      console.log('[genai] resolveTaskContext result', trimmed)
-      return trimmed ? { text: trimmed } : undefined
-    } catch (err) {
-      tryDebug(opts.debug, '[genai] task context error', err)
-      console.warn('[genai] task context error', err)
-      return undefined
-    }
-  }
-
   const buildRequestConfig = async () => {
-    const taskInstruction = await resolveTaskContext()
+    const taskInstruction = getLatestTaskInstruction()
     if (taskInstruction) {
       console.log('[genai] buildRequestConfig using taskInstruction', taskInstruction)
     } else {

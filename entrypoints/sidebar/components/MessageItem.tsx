@@ -9,8 +9,8 @@ export function MessageItem({ entry }: { entry: AiMessageEntry | UserMessageEntr
       <div
         className={
           isUser
-            ? 'rounded-md bg-primary px-3 py-2 text-primary-foreground'
-            : 'rounded-md bg-muted px-3 py-2 text-foreground'
+            ? 'rounded-md bg-primary px-3 py-2 text-primary-foreground select-text'
+            : 'rounded-md bg-muted px-3 py-2 text-foreground select-text'
         }
       >
         <MarkdownRenderer>{entry.text}</MarkdownRenderer>

@@ -1,4 +1,5 @@
 import type { ToolEvent } from "@/lib/genai"
+import { updateActiveConversation, updateTasksSnapshot } from "@/lib/taskContext"
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { runChat } from "../lib/chatService"
 import type {
@@ -175,6 +176,7 @@ export function useChatController() {
         },
       ])
       setActiveConversationId(newId)
+      updateActiveConversation(newId)
       setMessages(initialMessages)
       return
     }
@@ -185,6 +187,7 @@ export function useChatController() {
       firstConversation.tasks
     )
     setActiveConversationId(firstConversation.id)
+    updateActiveConversation(firstConversation.id)
     setMessages(inflatedMessages)
   }, [conversationsReady, conversations, setConversations])
 
@@ -200,6 +203,7 @@ export function useChatController() {
     const fallback = conversations[0]
     if (fallback) {
       setActiveConversationId(fallback.id)
+      updateActiveConversation(fallback.id)
       setMessages(ensureTaskSnapshot(fallback.messages, fallback.tasks))
     } else {
       const newId = makeId()
@@ -215,6 +219,7 @@ export function useChatController() {
         },
       ])
       setActiveConversationId(newId)
+      updateActiveConversation(newId)
       setMessages(initialMessages)
     }
   }, [
@@ -299,6 +304,7 @@ export function useChatController() {
     const now = Date.now()
     const initialMessages = ensureTaskSnapshot([], [])
     setActiveConversationId(newId)
+    updateActiveConversation(newId)
     setMessages(initialMessages)
     setConversations((prev) => [
       {
@@ -351,6 +357,7 @@ export function useChatController() {
       const conversation = conversations.find((c) => c.id === id)
       if (!conversation) return
       setActiveConversationId(conversation.id)
+      updateActiveConversation(conversation.id)
       setMessages(ensureTaskSnapshot(conversation.messages, conversation.tasks))
       setDraft("")
     },
@@ -362,6 +369,14 @@ export function useChatController() {
       setDraft,
     ]
   )
+
+  // Keep the shared task context bridge updated with latest active id and tasks
+  useEffect(() => {
+    updateActiveConversation(activeConversationId ?? null)
+    if (activeConversationId) {
+      updateTasksSnapshot(activeConversationId, tasks)
+    }
+  }, [activeConversationId, tasks])
 
   const mutateTasks = useCallback(
     (mutator: (prev: Task[]) => Task[]) => {
@@ -909,7 +924,6 @@ export function useChatController() {
           autoRunTools,
           history: historyForModel,
           taskClient: taskToolClient,
-          taskContext: buildTaskListText,
           callbacks: {
             onToolCall: (ev) => {
               const toolId = makeId()
@@ -1064,7 +1078,6 @@ export function useChatController() {
       ensureActiveConversation,
       conversationsReady,
       taskToolClient,
-      buildTaskListText,
       logTasksDebug,
     ]
   )
