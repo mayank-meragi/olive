@@ -62,11 +62,17 @@ export type ToolTimelineEntry = TimelineEntryBase & {
   text?: string
 }
 
+export type TaskStateEntry = TimelineEntryBase & {
+  kind: "task_state"
+  tasks: Task[]
+}
+
 export type ChatEntry =
   | UserMessageEntry
   | AiMessageEntry
   | ThinkingEntry
   | ToolTimelineEntry
+  | TaskStateEntry
 
 export type Conversation = {
   id: string

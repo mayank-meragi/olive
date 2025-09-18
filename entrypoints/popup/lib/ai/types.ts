@@ -23,7 +23,7 @@ export type GenerateOptions = {
     text?: string
     toolEvents?: ToolEvent[]
   }>
-  systemInstructionExtras?: Array<{ text: string }>
+  taskContext?: string | (() => string | Promise<string>)
   onToolCall?: (ev: { name: string; displayName?: string; args: any }) => void
   onToolResult?: (ev: {
     name: string

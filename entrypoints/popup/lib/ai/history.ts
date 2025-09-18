@@ -1,6 +1,7 @@
 import type { GenerateOptions, ToolEvent } from './types'
 
 export const buildHistoryContents = (opts: GenerateOptions) => {
+  console.log('[history] buildHistoryContents input', opts.history)
   const contents: any[] = []
   if (!Array.isArray(opts.history)) return contents
   for (const h of opts.history) {
@@ -18,5 +19,6 @@ export const buildHistoryContents = (opts: GenerateOptions) => {
       }
     }
   }
+  console.log('[history] buildHistoryContents output', contents)
   return contents
 }

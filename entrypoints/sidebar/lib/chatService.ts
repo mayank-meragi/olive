@@ -22,7 +22,7 @@ export async function runChat({
   autoRunTools,
   history,
   taskClient,
-  systemInstructionExtras,
+  taskContext,
   callbacks,
 }: {
   prompt: string
@@ -31,22 +31,49 @@ export async function runChat({
   autoRunTools: boolean
   history: Array<{ role: 'user' | 'model'; text?: string; toolEvents?: ToolEvent[] }>
   taskClient?: TaskToolClient
-  systemInstructionExtras?: Array<{ text: string }>
+  taskContext?: string | (() => string | Promise<string>)
   callbacks: RunChatCallbacks
 }): Promise<{ events: ToolEvent[] }> {
+  console.log('[chatService] runChat', {
+    prompt,
+    model,
+    thinkingEnabled,
+    autoRunTools,
+    historyLength: history.length,
+  })
   const tools = buildBrowserTools({ autoRun: autoRunTools, taskClient })
+  if (taskContext) {
+    try {
+      const preview =
+        typeof taskContext === 'function' ? taskContext() : Promise.resolve(taskContext)
+      Promise.resolve(preview)
+        .then((value) => {
+          if (typeof value === 'string') {
+            console.log('[chatService] taskContext preview', value)
+          }
+        })
+        .catch((err) => {
+          console.warn('[chatService] taskContext preview error', err)
+        })
+    } catch (err) {
+      console.warn('[chatService] taskContext sync error', err)
+    }
+  } else {
+    console.log('[chatService] taskContext missing')
+  }
   const { events } = await generateWithGemini(prompt, {
     model,
     thinkingEnabled,
     debug: true,
     tools,
     history,
-    systemInstructionExtras,
+    taskContext,
     onToolCall: callbacks.onToolCall,
     onToolResult: callbacks.onToolResult,
     onUpdate: callbacks.onUpdate,
     onThinkingUpdate: callbacks.onThinkingUpdate,
     shouldContinue: callbacks.shouldContinue,
   })
+  console.log('[chatService] runChat complete', { events })
   return { events }
 }

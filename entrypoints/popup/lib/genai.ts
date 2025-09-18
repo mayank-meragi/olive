@@ -32,13 +32,41 @@ export async function generateWithGemini(
   const model = getDefaultModel(opts.model)
 
   const thinkingConfig = resolveThinkingConfig(opts)
-  const baseConfig: any = {
-    systemInstruction: [
-      ...SYSTEM_INSTRUCTIONS,
-      ...(opts.systemInstructionExtras ?? []),
-    ],
+
+  const resolveTaskContext = async () => {
+    if (!opts.taskContext) return undefined
+    try {
+      const text =
+        typeof opts.taskContext === 'function'
+          ? await opts.taskContext()
+          : opts.taskContext
+      const trimmed = typeof text === 'string' ? text.trim() : ''
+      console.log('[genai] resolveTaskContext result', trimmed)
+      return trimmed ? { text: trimmed } : undefined
+    } catch (err) {
+      tryDebug(opts.debug, '[genai] task context error', err)
+      console.warn('[genai] task context error', err)
+      return undefined
+    }
   }
-  if (thinkingConfig) baseConfig.thinkingConfig = thinkingConfig
+
+  const buildRequestConfig = async () => {
+    const taskInstruction = await resolveTaskContext()
+    if (taskInstruction) {
+      console.log('[genai] buildRequestConfig using taskInstruction', taskInstruction)
+    } else {
+      console.log('[genai] buildRequestConfig using default instructions')
+    }
+    const systemInstruction = taskInstruction
+      ? [...SYSTEM_INSTRUCTIONS, taskInstruction]
+      : [...SYSTEM_INSTRUCTIONS]
+    const config: any = {
+      systemInstruction,
+    }
+    if (thinkingConfig) config.thinkingConfig = thinkingConfig
+    console.log('[genai] buildRequestConfig final', config)
+    return config
+  }
 
   const contents: any[] = buildHistoryContents(opts)
   contents.push({ role: 'user', parts: [{ text: prompt }] })
@@ -65,7 +93,7 @@ export async function generateWithGemini(
       ai,
       model,
       contents,
-      config: baseConfig,
+      configProvider: buildRequestConfig,
       opts,
       tools: opts.tools,
     })
@@ -73,6 +101,8 @@ export async function generateWithGemini(
   }
 
   if (opts.stream) {
+    const baseConfig = await buildRequestConfig()
+    console.log('[genai] runSimpleStream config', baseConfig)
     const state = await runSimpleStream({
       ai,
       model,
@@ -83,6 +113,8 @@ export async function generateWithGemini(
     return { text: state.text, events: [] }
   }
 
+  const baseConfig = await buildRequestConfig()
+  console.log('[genai] generateContent config', baseConfig)
   const res: any = await ai.models.generateContent({
     model,
     contents: [{ role: 'user', parts: [{ text: prompt }] }],

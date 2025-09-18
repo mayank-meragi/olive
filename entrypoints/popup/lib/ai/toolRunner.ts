@@ -81,6 +81,7 @@ const runSingleTool = async ({
 }) => {
   const name: string = call.name
   const def = tools[name]
+  console.log('[toolRunner] runSingleTool start', { name, args: call.args })
   try {
     opts.onToolCall?.({
       name,
@@ -120,6 +121,7 @@ const runSingleTool = async ({
 
   try {
     const result = await def.handler(args, {})
+    console.log('[toolRunner] runSingleTool success', { name, args, result })
     events.push({
       name,
       displayName: def.displayName ?? name,
@@ -147,6 +149,7 @@ const runSingleTool = async ({
     })
   } catch (e: any) {
     const error = e?.message ?? String(e)
+    console.warn('[toolRunner] runSingleTool error', { name, args, error })
     events.push({
       name,
       displayName: def.displayName ?? name,
@@ -177,27 +180,29 @@ export const runToolStreamingLoop = async ({
   ai,
   model,
   contents,
-  config,
+  configProvider,
   opts,
   tools,
 }: {
   ai: GoogleGenAI
   model: string
   contents: any[]
-  config: any
+  configProvider: () => Promise<any>
   opts: GenerateOptions
   tools: ToolRegistry
 }): Promise<{ text: string; events: ToolEvent[] }> => {
   const events: ToolEvent[] = []
   let iterations = 0
   while (true) {
+    const baseConfig = await configProvider()
+    console.log('[toolRunner] iteration config', iterations, baseConfig)
     tryDebug(opts.debug, '[genai] streaming turn', { iteration: iterations })
     const { interrupted, functionCalls, state } = await streamOnce({
       ai,
       model,
       contents,
       config: {
-        ...config,
+        ...baseConfig,
         tools: [{
           functionDeclarations: Object.values(tools).map((t) => ({
             name: t.name,

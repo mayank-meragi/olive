@@ -6,6 +6,7 @@ import type {
   Conversation,
   TabCtx,
   Task,
+  TaskStateEntry,
   ToolTimelineEntry,
 } from "../types"
 import { useScrollToBottom } from "./useScrollToBottom"
@@ -16,12 +17,94 @@ type PendingTool = { id: string; name: string }
 
 const DEFAULT_CONVERSATION_TITLE = "New Chat"
 
+const makeId = (() => {
+  let counter = 0
+  return () => `${Date.now().toString(36)}-${(counter++).toString(36)}`
+})()
+
+const cloneTaskList = (tasks: Task[]): Task[] =>
+  tasks.map((task) => ({
+    ...task,
+    subtasks: task.subtasks.map((subtask) => ({ ...subtask })),
+  }))
+
+const taskListsEqual = (a: Task[], b: Task[]): boolean => {
+  if (a.length !== b.length) return false
+  for (let i = 0; i < a.length; i += 1) {
+    const taskA = a[i]
+    const taskB = b[i]
+    if (
+      taskA.id !== taskB.id ||
+      taskA.title !== taskB.title ||
+      taskA.completed !== taskB.completed ||
+      taskA.createdAt !== taskB.createdAt ||
+      taskA.updatedAt !== taskB.updatedAt ||
+      taskA.subtasks.length !== taskB.subtasks.length
+    ) {
+      return false
+    }
+    for (let j = 0; j < taskA.subtasks.length; j += 1) {
+      const subA = taskA.subtasks[j]
+      const subB = taskB.subtasks[j]
+      if (
+        subA.id !== subB.id ||
+        subA.title !== subB.title ||
+        subA.completed !== subB.completed ||
+        subA.createdAt !== subB.createdAt ||
+        subA.updatedAt !== subB.updatedAt
+      ) {
+        return false
+      }
+    }
+  }
+  return true
+}
+
+const createTaskSnapshotEntry = (tasks: Task[]): TaskStateEntry => ({
+  id: makeId(),
+  kind: "task_state",
+  tasks: cloneTaskList(tasks),
+})
+
+const findLastIndex = <T>(
+  items: T[],
+  predicate: (item: T, index: number) => boolean
+): number => {
+  for (let idx = items.length - 1; idx >= 0; idx -= 1) {
+    if (predicate(items[idx], idx)) return idx
+  }
+  return -1
+}
+
+const ensureTaskSnapshot = (
+  messages: ChatEntry[] | undefined,
+  legacyTasks?: Task[]
+): ChatEntry[] => {
+  const base = Array.isArray(messages) ? [...messages] : []
+  const hasSnapshot = base.some((entry) => entry.kind === "task_state")
+  if (hasSnapshot) return base
+  const snapshot = Array.isArray(legacyTasks) ? legacyTasks : []
+  base.push(createTaskSnapshotEntry(snapshot))
+  return base
+}
+
+const extractTasksFromMessages = (entries: ChatEntry[]): Task[] => {
+  for (let idx = entries.length - 1; idx >= 0; idx -= 1) {
+    const entry = entries[idx]
+    if (entry.kind === "task_state") {
+      return cloneTaskList(entry.tasks)
+    }
+  }
+  return []
+}
+
 function deriveConversationTitle(
   entries: ChatEntry[],
   fallback: string = DEFAULT_CONVERSATION_TITLE
 ) {
   const firstUserMessage = entries.find(
-    (entry): entry is Extract<ChatEntry, { kind: "user" }> => entry.kind === "user"
+    (entry): entry is Extract<ChatEntry, { kind: "user" }> =>
+      entry.kind === "user"
   )
   if (!firstUserMessage) return fallback
   const trimmed = firstUserMessage.text.trim()
@@ -29,23 +112,14 @@ function deriveConversationTitle(
   return trimmed.length > 60 ? `${trimmed.slice(0, 60)}...` : trimmed
 }
 
-const makeId = (() => {
-  let counter = 0
-  return () => `${Date.now().toString(36)}-${(counter++).toString(36)}`
-})()
-
 export function useChatController() {
+  const logTasksDebug = useCallback((label: string, payload?: any) => {
+    if (payload !== undefined) console.log(`[tasks] ${label}`, payload)
+    else console.log(`[tasks] ${label}`)
+  }, [])
   const [messages, setMessages] = useState<ChatEntry[]>([])
   const [draft, setDraft] = useState("")
-  const [tasks, setTasks] = useState<Task[]>([])
   const tasksRef = useRef<Task[]>([])
-  const setTasksState = useCallback(
-    (next: Task[]) => {
-      tasksRef.current = next
-      setTasks(next)
-    },
-    [setTasks]
-  )
   const listRef = useRef<HTMLDivElement | null>(null)
   const textareaRef = useRef<HTMLTextAreaElement | null>(null)
   const [model, setModel] = useStorageSync<string>(
@@ -64,18 +138,23 @@ export function useChatController() {
   const [selectedTabIds, setSelectedTabIds] = useState<Set<number>>(new Set())
   const lastAiIdRef = useRef<string | null>(null)
   const pendingToolIdsRef = useRef<PendingTool[]>([])
-  const [conversations, setConversations, conversationsReady] =
-    useStorageSync<Conversation[]>("oliveConversations", [])
-  const [activeConversationId, setActiveConversationId] =
-    useState<string | null>(null)
+  const [conversations, setConversations, conversationsReady] = useStorageSync<
+    Conversation[]
+  >("oliveConversations", [])
+  const [activeConversationId, setActiveConversationId] = useState<
+    string | null
+  >(null)
   const initialisedConversationRef = useRef(false)
 
   useScrollToBottom(listRef, messages.length)
   useTextareaAutoResize(textareaRef, draft)
 
+  const tasks = useMemo(() => extractTasksFromMessages(messages), [messages])
+
   useEffect(() => {
     tasksRef.current = tasks
-  }, [tasks])
+    logTasksDebug("tasks derived updated", tasks)
+  }, [tasks, logTasksDebug])
 
   useEffect(() => {
     if (!conversationsReady) return
@@ -85,25 +164,29 @@ export function useChatController() {
     if (conversations.length === 0) {
       const newId = makeId()
       const now = Date.now()
+      const initialMessages = ensureTaskSnapshot([], [])
       setConversations([
         {
           id: newId,
           title: DEFAULT_CONVERSATION_TITLE,
-          messages: [],
+          messages: initialMessages,
           updatedAt: now,
           tasks: [],
         },
       ])
       setActiveConversationId(newId)
-      setTasksState([])
+      setMessages(initialMessages)
       return
     }
 
     const firstConversation = conversations[0]
+    const inflatedMessages = ensureTaskSnapshot(
+      firstConversation.messages,
+      firstConversation.tasks
+    )
     setActiveConversationId(firstConversation.id)
-    setMessages(firstConversation.messages ?? [])
-    setTasksState(firstConversation.tasks ?? [])
-  }, [conversationsReady, conversations, setConversations, setTasksState])
+    setMessages(inflatedMessages)
+  }, [conversationsReady, conversations, setConversations])
 
   useEffect(() => {
     if (!conversationsReady) return
@@ -117,30 +200,28 @@ export function useChatController() {
     const fallback = conversations[0]
     if (fallback) {
       setActiveConversationId(fallback.id)
-      setMessages(fallback.messages ?? [])
-      setTasksState(fallback.tasks ?? [])
+      setMessages(ensureTaskSnapshot(fallback.messages, fallback.tasks))
     } else {
       const newId = makeId()
       const now = Date.now()
+      const initialMessages = ensureTaskSnapshot([], [])
       setConversations([
         {
           id: newId,
           title: DEFAULT_CONVERSATION_TITLE,
-          messages: [],
+          messages: initialMessages,
           updatedAt: now,
           tasks: [],
         },
       ])
       setActiveConversationId(newId)
-      setMessages([])
-      setTasksState([])
+      setMessages(initialMessages)
     }
   }, [
     conversationsReady,
     conversations,
     activeConversationId,
     setConversations,
-    setTasksState,
   ])
 
   useEffect(() => {
@@ -159,8 +240,7 @@ export function useChatController() {
       const needsUpdate =
         !current ||
         current.messages !== messages ||
-        current.title !== nextTitle ||
-        current.tasks !== tasksRef.current
+        current.title !== nextTitle
       if (!needsUpdate) return prev
 
       const updatedConversation: Conversation = {
@@ -168,7 +248,7 @@ export function useChatController() {
         title: nextTitle,
         messages,
         updatedAt: Date.now(),
-        tasks: tasksRef.current,
+        tasks: cloneTaskList(tasks),
       }
 
       if (!current) {
@@ -217,13 +297,14 @@ export function useChatController() {
     if (activeConversationId) return activeConversationId
     const newId = makeId()
     const now = Date.now()
+    const initialMessages = ensureTaskSnapshot([], [])
     setActiveConversationId(newId)
-    setTasksState([])
+    setMessages(initialMessages)
     setConversations((prev) => [
       {
         id: newId,
         title: DEFAULT_CONVERSATION_TITLE,
-        messages: [],
+        messages: initialMessages,
         updatedAt: now,
         tasks: [],
       },
@@ -234,7 +315,7 @@ export function useChatController() {
     activeConversationId,
     conversationsReady,
     setActiveConversationId,
-    setTasksState,
+    setMessages,
     setConversations,
   ])
 
@@ -242,15 +323,15 @@ export function useChatController() {
     if (!conversationsReady) return
     const newId = makeId()
     const now = Date.now()
+    const initialMessages = ensureTaskSnapshot([], [])
     setActiveConversationId(newId)
-    setMessages([])
+    setMessages(initialMessages)
     setDraft("")
-    setTasksState([])
     setConversations((prev) => [
       {
         id: newId,
         title: DEFAULT_CONVERSATION_TITLE,
-        messages: [],
+        messages: initialMessages,
         updatedAt: now,
         tasks: [],
       },
@@ -261,7 +342,6 @@ export function useChatController() {
     setConversations,
     setMessages,
     setDraft,
-    setTasksState,
   ])
 
   const selectConversation = useCallback(
@@ -271,9 +351,8 @@ export function useChatController() {
       const conversation = conversations.find((c) => c.id === id)
       if (!conversation) return
       setActiveConversationId(conversation.id)
-      setMessages(conversation.messages ?? [])
+      setMessages(ensureTaskSnapshot(conversation.messages, conversation.tasks))
       setDraft("")
-      setTasksState(conversation.tasks ?? [])
     },
     [
       conversations,
@@ -281,25 +360,24 @@ export function useChatController() {
       conversationsReady,
       setMessages,
       setDraft,
-      setTasksState,
     ]
   )
 
   const mutateTasks = useCallback(
     (mutator: (prev: Task[]) => Task[]) => {
-      let snapshot: Task[] | null = null
-      setTasks((prev) => {
-        const result = mutator(prev)
-        snapshot = result
-        return result
-      })
-      if (snapshot) {
-        tasksRef.current = snapshot
-        return snapshot
+      const previous = tasksRef.current
+      const draft = mutator(cloneTaskList(previous))
+      const normalized = cloneTaskList(draft)
+      if (taskListsEqual(previous, normalized)) {
+        logTasksDebug("mutateTasks noop", normalized)
+        return previous
       }
-      return tasksRef.current
+      logTasksDebug("mutateTasks next", normalized)
+      tasksRef.current = normalized
+      setMessages((prev) => [...prev, createTaskSnapshotEntry(normalized)])
+      return normalized
     },
-    []
+    [logTasksDebug, setMessages]
   )
 
   const createTaskNode = useCallback(
@@ -314,13 +392,16 @@ export function useChatController() {
     }) => {
       const trimmed = (title ?? "").trim()
       if (!trimmed) {
+        logTasksDebug("createTaskNode invalid title", title)
         return { ok: false, error: "Task title is required" }
       }
       if (!conversationsReady) {
+        logTasksDebug("createTaskNode conversations not ready")
         return { ok: false, error: "Conversation state not ready" }
       }
       const convId = ensureActiveConversation()
       if (!convId) {
+        logTasksDebug("createTaskNode missing conversation id")
         return { ok: false, error: "Unable to resolve conversation" }
       }
       const now = Date.now()
@@ -347,10 +428,12 @@ export function useChatController() {
               .filter((sub): sub is Task["subtasks"][number] => sub != null)
           : [],
       }
+      logTasksDebug("createTaskNode constructed task", task)
       const nextTasks = mutateTasks((prev) => [...prev, task])
+      logTasksDebug("createTaskNode mutate result", nextTasks)
       return { ok: true, tasks: nextTasks, task }
     },
-    [conversationsReady, ensureActiveConversation, mutateTasks]
+    [conversationsReady, ensureActiveConversation, mutateTasks, logTasksDebug]
   )
 
   const addSubtask = useCallback(
@@ -358,6 +441,7 @@ export function useChatController() {
       const trimmed = (title ?? "").trim()
       if (!trimmed) return { ok: false, error: "Subtask title is required" }
       if (!conversationsReady || !activeConversationId) {
+        logTasksDebug("addSubtask missing conversation", { taskId, title })
         return { ok: false, error: "No active conversation" }
       }
       const now = Date.now()
@@ -387,17 +471,20 @@ export function useChatController() {
       })
 
       if (!success) {
+        logTasksDebug("addSubtask parent not found", { taskId, title })
         return { ok: false, error: "Parent task not found" }
       }
+      logTasksDebug("addSubtask created", createdSubtask)
       return { ok: true, tasks: nextTasks, subtask: createdSubtask }
     },
-    [mutateTasks, conversationsReady, activeConversationId]
+    [mutateTasks, conversationsReady, activeConversationId, logTasksDebug]
   )
 
   const removeTask = useCallback(
     (id: string) => {
       if (!id) return { ok: false, error: "Task id is required" }
       if (!conversationsReady || !activeConversationId) {
+        logTasksDebug("removeTask missing conversation", { id })
         return { ok: false, error: "No active conversation" }
       }
       let success = false
@@ -407,10 +494,14 @@ export function useChatController() {
         success = true
         return [...prev.slice(0, idx), ...prev.slice(idx + 1)]
       })
-      if (!success) return { ok: false, error: "Task not found" }
+      if (!success) {
+        logTasksDebug("removeTask not found", { id })
+        return { ok: false, error: "Task not found" }
+      }
+      logTasksDebug("removeTask success", { id, tasks: nextTasks })
       return { ok: true, tasks: nextTasks }
     },
-    [mutateTasks, conversationsReady, activeConversationId]
+    [mutateTasks, conversationsReady, activeConversationId, logTasksDebug]
   )
 
   const removeSubtask = useCallback(
@@ -419,6 +510,10 @@ export function useChatController() {
         return { ok: false, error: "Task id and subtask id are required" }
       }
       if (!conversationsReady || !activeConversationId) {
+        logTasksDebug("removeSubtask missing conversation", {
+          taskId,
+          subtaskId,
+        })
         return { ok: false, error: "No active conversation" }
       }
       let success = false
@@ -441,10 +536,18 @@ export function useChatController() {
         next[idx] = updated
         return next
       })
-      if (!success) return { ok: false, error: "Subtask not found" }
+      if (!success) {
+        logTasksDebug("removeSubtask not found", { taskId, subtaskId })
+        return { ok: false, error: "Subtask not found" }
+      }
+      logTasksDebug("removeSubtask success", {
+        taskId,
+        subtaskId,
+        tasks: nextTasks,
+      })
       return { ok: true, tasks: nextTasks }
     },
-    [mutateTasks, conversationsReady, activeConversationId]
+    [mutateTasks, conversationsReady, activeConversationId, logTasksDebug]
   )
 
   const addTask = useCallback(
@@ -454,15 +557,26 @@ export function useChatController() {
   )
 
   const addTasksBatch = useCallback(
-    (tasksBatch: Array<{ title: string; completed?: boolean; subtasks?: Array<{ title: string; completed?: boolean }> }>) => {
+    (
+      tasksBatch: Array<{
+        title: string
+        completed?: boolean
+        subtasks?: Array<{ title: string; completed?: boolean }>
+      }>
+    ) => {
       if (!tasksBatch.length) return { ok: true, tasks }
-      if (!conversationsReady) return { ok: false, error: "Conversation state not ready" }
+      if (!conversationsReady)
+        return { ok: false, error: "Conversation state not ready" }
       const convId = ensureActiveConversation()
       if (!convId) return { ok: false, error: "Unable to resolve conversation" }
       let next = tasks
       for (const entry of tasksBatch) {
         const { title, completed, subtasks } = entry ?? {}
-        const result = createTaskNode({ title: title ?? "", completed, subtasks })
+        const result = createTaskNode({
+          title: title ?? "",
+          completed,
+          subtasks,
+        })
         if (!result.ok) return result
         next = result.tasks
       }
@@ -475,6 +589,7 @@ export function useChatController() {
     (id: string, done?: boolean) => {
       if (!id) return { ok: false, error: "Task id is required" }
       if (!conversationsReady || !activeConversationId) {
+        logTasksDebug("toggleTaskCompletion missing conversation", { id, done })
         return { ok: false, error: "No active conversation" }
       }
       const now = Date.now()
@@ -494,10 +609,18 @@ export function useChatController() {
         next[idx] = updated
         return next
       })
-      if (!success) return { ok: false, error: "Task not found" }
+      if (!success) {
+        logTasksDebug("toggleTaskCompletion task not found", { id })
+        return { ok: false, error: "Task not found" }
+      }
+      logTasksDebug("toggleTaskCompletion success", {
+        id,
+        done,
+        tasks: nextTasks,
+      })
       return { ok: true, tasks: nextTasks }
     },
-    [mutateTasks, conversationsReady, activeConversationId]
+    [mutateTasks, conversationsReady, activeConversationId, logTasksDebug]
   )
 
   const toggleSubtaskCompletion = useCallback(
@@ -506,6 +629,11 @@ export function useChatController() {
         return { ok: false, error: "Task id and subtask id are required" }
       }
       if (!conversationsReady || !activeConversationId) {
+        logTasksDebug("toggleSubtaskCompletion missing conversation", {
+          taskId,
+          subtaskId,
+          done,
+        })
         return { ok: false, error: "No active conversation" }
       }
       const now = Date.now()
@@ -537,10 +665,22 @@ export function useChatController() {
         next[idx] = updatedParent
         return next
       })
-      if (!success) return { ok: false, error: "Subtask not found" }
+      if (!success) {
+        logTasksDebug("toggleSubtaskCompletion not found", {
+          taskId,
+          subtaskId,
+        })
+        return { ok: false, error: "Subtask not found" }
+      }
+      logTasksDebug("toggleSubtaskCompletion success", {
+        taskId,
+        subtaskId,
+        done,
+        tasks: nextTasks,
+      })
       return { ok: true, tasks: nextTasks }
     },
-    [mutateTasks, conversationsReady, activeConversationId]
+    [mutateTasks, conversationsReady, activeConversationId, logTasksDebug]
   )
 
   const listTasks = useCallback(() => {
@@ -548,11 +688,13 @@ export function useChatController() {
       return { ok: true, tasks: [] as Task[] }
     }
     const currentId = activeConversationId ?? ensureActiveConversation()
-    const activeConversation = conversations.find((c) => c.id === currentId)
-    const source = activeConversation?.tasks ?? tasksRef.current
+    logTasksDebug("listTasks source", {
+      conversationId: currentId,
+      tasks: tasks,
+    })
     return {
       ok: true,
-      tasks: source.map((task) => ({
+      tasks: tasks.map((task) => ({
         id: task.id,
         title: task.title,
         completed: task.completed,
@@ -567,26 +709,29 @@ export function useChatController() {
     conversationsReady,
     activeConversationId,
     ensureActiveConversation,
-    conversations,
-    tasksRef,
+    tasks,
+    logTasksDebug,
   ])
 
   const buildTaskListText = useCallback(() => {
     const { tasks } = listTasks()
-    if (!tasks.length) return 'Current Task List: (none)'
+    logTasksDebug("buildTaskListText tasks snapshot", tasks)
+    if (!tasks.length) return "Current Task List: (none)"
     const lines: string[] = []
     tasks.forEach((task, idx) => {
-      lines.push(`${idx + 1}. ${task.completed ? '[x]' : '[ ]'} ${task.title}`)
+      lines.push(`${idx + 1}. ${task.completed ? "[x]" : "[ ]"} ${task.title}`)
       if (task.subtasks.length) {
         task.subtasks.forEach((sub, subIdx) => {
           lines.push(
-            `    ${idx + 1}.${subIdx + 1} ${sub.completed ? '[x]' : '[ ]'} ${sub.title}`,
+            `    ${idx + 1}.${subIdx + 1} ${sub.completed ? "[x]" : "[ ]"} ${sub.title}`
           )
         })
       }
     })
-    return `Current Task List (latest):\n${lines.join('\n')}`
-  }, [listTasks])
+    const text = `Current Task List (latest):\n${lines.join("\n")}`
+    logTasksDebug("buildTaskListText output", text)
+    return text
+  }, [listTasks, logTasksDebug])
 
   const taskToolClient = useMemo(
     () => ({
@@ -598,7 +743,16 @@ export function useChatController() {
         title: string
         completed?: boolean
         subtasks?: Array<{ title: string; completed?: boolean }>
-      }) => createTaskNode({ title, completed, subtasks }),
+      }) => {
+        logTasksDebug("taskToolClient.createTask input", {
+          title,
+          completed,
+          subtasks,
+        })
+        const result = createTaskNode({ title, completed, subtasks })
+        logTasksDebug("taskToolClient.createTask result", result)
+        return result
+      },
       createTasks: async ({
         tasks: batch,
       }: {
@@ -607,7 +761,12 @@ export function useChatController() {
           completed?: boolean
           subtasks?: Array<{ title: string; completed?: boolean }>
         }>
-      }) => addTasksBatch(Array.isArray(batch) ? batch : []),
+      }) => {
+        logTasksDebug("taskToolClient.createTasks input", batch)
+        const result = addTasksBatch(Array.isArray(batch) ? batch : [])
+        logTasksDebug("taskToolClient.createTasks result", result)
+        return result
+      },
       createSubtask: async ({
         taskId,
         title,
@@ -616,15 +775,33 @@ export function useChatController() {
         taskId: string
         title: string
         completed?: boolean
-      }) => addSubtask(taskId, title, completed),
+      }) => {
+        logTasksDebug("taskToolClient.createSubtask input", {
+          taskId,
+          title,
+          completed,
+        })
+        const result = addSubtask(taskId, title, completed)
+        logTasksDebug("taskToolClient.createSubtask result", result)
+        return result
+      },
       deleteTask: async ({
         taskId,
         parentTaskId,
       }: {
         taskId: string
         parentTaskId?: string
-      }) =>
-        parentTaskId ? removeSubtask(parentTaskId, taskId) : removeTask(taskId),
+      }) => {
+        logTasksDebug("taskToolClient.deleteTask input", {
+          taskId,
+          parentTaskId,
+        })
+        const result = parentTaskId
+          ? removeSubtask(parentTaskId, taskId)
+          : removeTask(taskId)
+        logTasksDebug("taskToolClient.deleteTask result", result)
+        return result
+      },
       markTaskDone: async ({
         taskId,
         parentTaskId,
@@ -633,11 +810,24 @@ export function useChatController() {
         taskId: string
         parentTaskId?: string
         done?: boolean
-      }) =>
-        parentTaskId
+      }) => {
+        logTasksDebug("taskToolClient.markTaskDone input", {
+          taskId,
+          parentTaskId,
+          done,
+        })
+        const result = parentTaskId
           ? toggleSubtaskCompletion(parentTaskId, taskId, done)
-          : toggleTaskCompletion(taskId, done),
-      listTasks: async () => listTasks(),
+          : toggleTaskCompletion(taskId, done)
+        logTasksDebug("taskToolClient.markTaskDone result", result)
+        return result
+      },
+      listTasks: async () => {
+        logTasksDebug("taskToolClient.listTasks invoked")
+        const result = listTasks()
+        logTasksDebug("taskToolClient.listTasks result", result)
+        return result
+      },
     }),
     [
       createTaskNode,
@@ -647,6 +837,7 @@ export function useChatController() {
       toggleTaskCompletion,
       toggleSubtaskCompletion,
       listTasks,
+      logTasksDebug,
     ]
   )
 
@@ -704,18 +895,25 @@ export function useChatController() {
       pendingToolIdsRef.current = []
 
       try {
-      const { events } = await runChat({
-        prompt: fullPrompt,
-        model,
-        thinkingEnabled: thinking,
-        autoRunTools,
-        history: historyForModel,
-      taskClient: taskToolClient,
-      systemInstructionExtras: [{ text: buildTaskListText() }],
-      callbacks: {
-          onToolCall: (ev) => {
-            const toolId = makeId()
-            pendingToolIdsRef.current.push({ id: toolId, name: ev.name })
+        logTasksDebug("send invoking runChat", {
+          prompt: fullPrompt,
+          model,
+          thinking,
+          autoRunTools,
+          historyForModel,
+        })
+        const { events } = await runChat({
+          prompt: fullPrompt,
+          model,
+          thinkingEnabled: thinking,
+          autoRunTools,
+          history: historyForModel,
+          taskClient: taskToolClient,
+          taskContext: buildTaskListText,
+          callbacks: {
+            onToolCall: (ev) => {
+              const toolId = makeId()
+              pendingToolIdsRef.current.push({ id: toolId, name: ev.name })
               setMessages((prev) => [
                 ...prev,
                 {
@@ -782,10 +980,11 @@ export function useChatController() {
               setMessages((prev) => {
                 if (!full) return prev
                 const next = [...prev]
-                const last = next[next.length - 1]
-                if (last && last.kind === "ai") {
-                  next[next.length - 1] = { ...last, text: full }
-                  lastAiIdRef.current = last.id
+                const idx = findLastIndex(next, (entry) => entry.kind === "ai")
+                if (idx >= 0) {
+                  const existing = next[idx] as Extract<ChatEntry, { kind: "ai" }>
+                  next[idx] = { ...existing, text: full }
+                  lastAiIdRef.current = existing.id
                   return next
                 }
                 const id = makeId()
@@ -804,9 +1003,16 @@ export function useChatController() {
               if (!tfull) return
               setMessages((prev) => {
                 const next = [...prev]
-                const last = next[next.length - 1]
-                if (last && last.kind === "thinking") {
-                  next[next.length - 1] = { ...last, text: tfull }
+                const idx = findLastIndex(
+                  next,
+                  (entry) => entry.kind === "thinking"
+                )
+                if (idx >= 0) {
+                  const existing = next[idx] as Extract<
+                    ChatEntry,
+                    { kind: "thinking" }
+                  >
+                  next[idx] = { ...existing, text: tfull }
                   return next
                 }
                 return [
@@ -859,6 +1065,7 @@ export function useChatController() {
       conversationsReady,
       taskToolClient,
       buildTaskListText,
+      logTasksDebug,
     ]
   )
 
