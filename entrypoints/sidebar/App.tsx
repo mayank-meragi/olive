@@ -1,5 +1,5 @@
 import { Button } from "@/components/ui/button"
-import { History, Plus } from "lucide-react"
+import { History, Plus, Trash } from "lucide-react"
 import { useState } from "react"
 import { ChatComposer } from "./components/ChatComposer"
 import { MessageList } from "./components/MessageList"
@@ -35,6 +35,7 @@ function SidebarContent() {
     conversations,
     activeConversationId,
     selectConversation,
+    deleteConversation,
     startNewConversation,
     conversationsReady,
     tasks,
@@ -82,33 +83,47 @@ function SidebarContent() {
               {conversations.map((conversation) => {
                 const isActive = conversation.id === activeConversationId
                 return (
-                  <Button
-                    key={conversation.id}
-                    onClick={() => {
-                      selectConversation(conversation.id)
-                      setHistoryOpen(false)
-                    }}
-                    disabled={streaming}
-                    variant={isActive ? "default" : "ghost"}
-                    className={`flex h-auto w-full flex-col items-start gap-1 px-3 py-2 text-left text-xs ${
-                      isActive
-                        ? "text-background"
-                        : "text-muted-foreground hover:text-foreground"
-                    } ${streaming ? "pointer-events-none opacity-60" : ""}`}
-                  >
-                    <span className="w-full truncate text-sm font-medium">
-                      {conversation.title || "New Chat"}
-                    </span>
-                    <span
-                      className={`text-[10px] uppercase tracking-wide ${
+                  <div key={conversation.id} className="flex items-center gap-1">
+                    <Button
+                      onClick={() => {
+                        selectConversation(conversation.id)
+                        setHistoryOpen(false)
+                      }}
+                      disabled={streaming}
+                      variant={isActive ? "default" : "ghost"}
+                      className={`flex h-auto w-full flex-1 flex-col items-start gap-1 px-3 py-2 text-left text-xs ${
                         isActive
-                          ? "text-primary-foreground/70"
-                          : "text-muted-foreground"
-                      }`}
+                          ? "text-background"
+                          : "text-muted-foreground hover:text-foreground"
+                      } ${streaming ? "pointer-events-none opacity-60" : ""}`}
                     >
-                      {formatConversationTime(conversation.updatedAt)}
-                    </span>
-                  </Button>
+                      <span className="w-full truncate text-sm font-medium">
+                        {conversation.title || "New Chat"}
+                      </span>
+                      <span
+                        className={`text-[10px] uppercase tracking-wide ${
+                          isActive
+                            ? "text-primary-foreground/70"
+                            : "text-muted-foreground"
+                        }`}
+                      >
+                        {formatConversationTime(conversation.updatedAt)}
+                      </span>
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="shrink-0"
+                      disabled={streaming}
+                      aria-label="Delete conversation"
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        deleteConversation(conversation.id)
+                      }}
+                    >
+                      <Trash className="h-4 w-4" />
+                    </Button>
+                  </div>
                 )
               })}
             </div>

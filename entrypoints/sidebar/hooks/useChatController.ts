@@ -331,6 +331,7 @@ export function useChatController() {
     const now = Date.now()
     const initialMessages = ensureTaskSnapshot([], [])
     setActiveConversationId(newId)
+    updateActiveConversation(newId)
     setMessages(initialMessages)
     setDraft("")
     setConversations((prev) => [
@@ -368,6 +369,27 @@ export function useChatController() {
       setMessages,
       setDraft,
     ]
+  )
+
+  const deleteConversation = useCallback(
+    (id: string) => {
+      if (!conversationsReady) return
+      const nextList = conversations.filter((c) => c.id !== id)
+      setConversations(nextList)
+      if (activeConversationId === id) {
+        const nextActive = nextList[0]?.id ?? null
+        setActiveConversationId(nextActive)
+        updateActiveConversation(nextActive)
+        if (nextActive) {
+          const conv = nextList.find((c) => c.id === nextActive)
+          setMessages(ensureTaskSnapshot(conv?.messages, conv?.tasks))
+        } else {
+          setMessages([])
+        }
+        setDraft("")
+      }
+    },
+    [conversationsReady, conversations, activeConversationId, setConversations]
   )
 
   // Keep the shared task context bridge updated with latest active id and tasks
@@ -1117,6 +1139,7 @@ export function useChatController() {
     conversations,
     activeConversationId,
     selectConversation,
+    deleteConversation,
     startNewConversation,
     conversationsReady,
     tasks,
