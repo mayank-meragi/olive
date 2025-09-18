@@ -24,20 +24,46 @@ export function TabPicker({
   const [highlightIndex, setHighlightIndex] = useState(0)
   const searchRef = useRef<HTMLInputElement | null>(null)
   const tabListRef = useRef<HTMLDivElement | null>(null)
+  const contentRef = useRef<HTMLDivElement | null>(null)
 
   // Load tabs when opened
   useEffect(() => {
     if (!open) return
+    console.log('[TabPicker] open=true, querying tabs')
     ;(async () => {
       try {
         const tabs = await browser.tabs.query({})
         setAllTabs(tabs)
+        console.log('[TabPicker] tabs loaded', { count: tabs.length })
       } catch {}
     })()
     setTabQuery('')
     setHighlightIndex(0)
     setTimeout(() => searchRef.current?.focus(), 0)
   }, [open, setAllTabs])
+
+  useEffect(() => {
+    console.log('[TabPicker] open changed', { open })
+  }, [open])
+
+  // Debug: verify Popover content is mounted and visible when open
+  useEffect(() => {
+    if (!open) return
+    const el = contentRef.current
+    if (!el) {
+      console.log('[TabPicker] contentRef not set')
+      return
+    }
+    const rect = el.getBoundingClientRect()
+    const style = window.getComputedStyle(el)
+    console.log('[TabPicker] content rect/style', {
+      rect: { x: rect.x, y: rect.y, width: rect.width, height: rect.height },
+      display: style.display,
+      visibility: style.visibility,
+      opacity: style.opacity,
+      zIndex: style.zIndex,
+    })
+  }, [open])
 
   // Ensure highlighted item is visible
   useEffect(() => {
@@ -63,8 +89,16 @@ export function TabPicker({
 
   return (
     <Popover open={open} onOpenChange={onOpenChange}>
-      <PopoverAnchor asChild>{anchor}</PopoverAnchor>
-      <PopoverContent className="w-[360px] p-0" onOpenAutoFocus={(e) => e.preventDefault()}>
+      <PopoverAnchor>{anchor}</PopoverAnchor>
+      <PopoverContent
+        side="top"
+        align="start"
+        sideOffset={8}
+        className="z-[9999] w-[360px] p-0 border shadow-lg"
+        onOpenAutoFocus={(e) => e.preventDefault()}
+        data-testid="tabpicker-content"
+        ref={contentRef as any}
+      >
         <div className="p-2 pb-0">
           <Input
             ref={searchRef}

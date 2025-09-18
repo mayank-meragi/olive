@@ -6,7 +6,7 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { Switch } from "@/components/ui/switch"
-import { useMemo } from "react"
+import { useEffect, useMemo } from "react"
 import { ChatInput } from "./ChatInput"
 import { TabPicker } from "./TabPicker"
 import { useChatControllerContext } from "../context/ChatControllerContext"
@@ -38,6 +38,10 @@ export function ChatComposer() {
     [allTabs, selectedTabIds]
   )
 
+  useEffect(() => {
+    console.log('[ChatComposer] tabPickerOpen state changed', { tabPickerOpen })
+  }, [tabPickerOpen])
+
   return (
     <form
       className="sticky bottom-0 m-2 rounded-lg border bg-background p-2"
@@ -61,10 +65,14 @@ export function ChatComposer() {
             onSubmit={() => handleSubmit(draft)}
             onStop={handleStop}
             textareaRef={textareaRef}
-            onAtTrigger={() => setTabPickerOpen(true)}
+            onAtTrigger={() => {
+              console.log('[ChatComposer] onAtTrigger called, opening TabPicker')
+              setTabPickerOpen(true)
+            }}
           />
         }
       />
+      {/* Debug: log tabPickerOpen changes */}
       {selectedTabs.length > 0 && (
         <div className="mt-2 flex flex-wrap gap-2">
           {selectedTabs.map((t) => (

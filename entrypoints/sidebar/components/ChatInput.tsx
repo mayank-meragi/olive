@@ -25,10 +25,35 @@ export function ChatInput({
         ref={textareaRef}
         placeholder="Ask anything... Press @ to add tabs"
         value={draft}
-        onChange={(e) => setDraft(e.target.value)}
+        onChange={(e) => {
+          const next = e.target.value
+          // Heuristic: if the user just typed one character and it's '@', open the picker.
+          const shouldOpen = next.length === draft.length + 1 && next.endsWith("@")
+          if (shouldOpen) {
+            console.log("[ChatInput] onChange detected '@'", { prev: draft, next })
+            onAtTrigger()
+          }
+          if (!shouldOpen) {
+            // Log key edit without trigger for debugging
+            console.log("[ChatInput] onChange", { prev: draft, next })
+          }
+          setDraft(next)
+        }}
         onKeyDown={(e) => {
-          if (e.key === "@") {
+          // Robust '@' detection across layouts
+          console.log("[ChatInput] onKeyDown", {
+            key: e.key,
+            code: e.code,
+            shiftKey: e.shiftKey,
+            ctrlKey: e.ctrlKey,
+            metaKey: e.metaKey,
+          })
+          if (
+            e.key === "@" ||
+            (e.shiftKey && (e.key === "2" || e.code === "Digit2"))
+          ) {
             e.preventDefault()
+            console.log("[ChatInput] opening TabPicker via keydown trigger")
             onAtTrigger()
             return
           }
