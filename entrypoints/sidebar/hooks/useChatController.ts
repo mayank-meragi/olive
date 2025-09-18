@@ -994,10 +994,11 @@ export function useChatController() {
               setMessages((prev) => {
                 if (!full) return prev
                 const next = [...prev]
-                const idx = findLastIndex(next, (entry) => entry.kind === "ai")
-                if (idx >= 0) {
-                  const existing = next[idx] as Extract<ChatEntry, { kind: "ai" }>
-                  next[idx] = { ...existing, text: full }
+                const lastIdx = next.length - 1
+                const last = lastIdx >= 0 ? next[lastIdx] : undefined
+                if (last && last.kind === "ai") {
+                  const existing = last as Extract<ChatEntry, { kind: "ai" }>
+                  next[lastIdx] = { ...existing, text: full }
                   lastAiIdRef.current = existing.id
                   return next
                 }
@@ -1017,16 +1018,11 @@ export function useChatController() {
               if (!tfull) return
               setMessages((prev) => {
                 const next = [...prev]
-                const idx = findLastIndex(
-                  next,
-                  (entry) => entry.kind === "thinking"
-                )
-                if (idx >= 0) {
-                  const existing = next[idx] as Extract<
-                    ChatEntry,
-                    { kind: "thinking" }
-                  >
-                  next[idx] = { ...existing, text: tfull }
+                const lastIdx = next.length - 1
+                const last = lastIdx >= 0 ? next[lastIdx] : undefined
+                if (last && last.kind === "thinking") {
+                  const existing = last as Extract<ChatEntry, { kind: "thinking" }>
+                  next[lastIdx] = { ...existing, text: tfull }
                   return next
                 }
                 return [
