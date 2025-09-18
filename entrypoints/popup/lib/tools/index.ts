@@ -1,8 +1,10 @@
 import type { ToolRegistry } from '../genai'
-import { createTabTools } from './tabTools'
 import { createPageTools } from './pageTools'
 import { createTaskTools } from './taskTools'
+import { createTabTools } from './tabTools'
 import type { TaskToolClient } from './types'
+import { createMustAllowGuard } from './utils'
+import { createToolRegistryBuilder } from './registry'
 
 export type {
   TaskToolClient,
@@ -14,23 +16,22 @@ export type {
   TaskListResult,
 } from './types'
 
+export { createToolRegistryBuilder } from './registry'
+
 export function buildBrowserTools(opts: {
   autoRun: boolean
   taskClient?: TaskToolClient
 }): ToolRegistry {
-  const mustAllow = () => {
-    if (!opts.autoRun) throw new Error('Tool execution disabled by user')
+  const mustAllow = createMustAllowGuard(opts.autoRun)
+  const builder = createToolRegistryBuilder()
+    .register(({ mustAllow }) => createTabTools({ mustAllow }))
+    .register(({ mustAllow }) => createPageTools({ mustAllow }))
+
+  if (opts.taskClient) {
+    builder.register(({ mustAllow }) =>
+      createTaskTools({ mustAllow, taskClient: opts.taskClient }),
+    )
   }
 
-  const baseTools: ToolRegistry = {
-    ...createTabTools({ mustAllow }),
-    ...createPageTools({ mustAllow }),
-  }
-
-  const taskTools = createTaskTools({ mustAllow, taskClient: opts.taskClient })
-
-  return {
-    ...baseTools,
-    ...taskTools,
-  }
+  return builder.build({ mustAllow, taskClient: opts.taskClient })
 }

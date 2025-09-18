@@ -1,3 +1,9 @@
+import type { MustAllowFn } from './types'
+
+export const createMustAllowGuard = (autoRun: boolean): MustAllowFn => () => {
+  if (!autoRun) throw new Error('Tool execution disabled by user')
+}
+
 export function ensureHttpUrl(url: unknown): string | null {
   try {
     const u = new URL(String(url))
