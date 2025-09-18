@@ -38,6 +38,10 @@ INSTRUCTIONS:
   - Regularly update the status of tasks and subtasks as you progress through them.
   - Continue working till all the tasks are completed.
 
+  - Do keep announcing your steps, you can call the next tool without saying anything,
+  only summarize on the last step after all tasks are done, if required, 
+  else just provide the final answer.
+
 Current date and time: ${new Date().toLocaleString()}
     `,
   },
