@@ -128,10 +128,27 @@ const runSingleTool = async ({
       args,
       result,
     })
-    contents.push({
-      role: 'user',
-      parts: [{ functionResponse: { name, response: result } }],
-    })
+    {
+      const parts: any[] = [{ functionResponse: { name, response: result } }]
+      try {
+        const img = (result as any)?.screenshot
+        if (
+          img &&
+          typeof img?.base64 === 'string' &&
+          img.base64.length > 0 &&
+          typeof img?.mimeType === 'string'
+        ) {
+          parts.push({ inlineData: { data: img.base64, mimeType: img.mimeType } })
+          tryDebug(opts.debug, '[genai] attached screenshot inlineData', {
+            mimeType: img.mimeType,
+            size: img.base64.length,
+          })
+        }
+      } catch {
+        // ignore attachment errors
+      }
+      contents.push({ role: 'user', parts })
+    }
     try {
       opts.onToolResult?.({
         name,

@@ -142,41 +142,73 @@ export function createPageTools({
           description: "CSS selector for the field.",
         },
         value: { type: Type.STRING, description: "Text value to fill." },
+        point: {
+          type: Type.OBJECT,
+          description:
+            "Focus element at viewport coordinates then fill. Provide either selector or point.",
+          properties: {
+            x: { type: Type.INTEGER, description: "X coordinate." },
+            y: { type: Type.INTEGER, description: "Y coordinate." },
+            unit: {
+              type: Type.STRING,
+              description: "'px' or 'percent' (default 'px').",
+            },
+          },
+        },
       },
-      required: ["tabId", "selector", "value"],
+      required: ["tabId", "value"],
     },
-    handler: async ({ tabId, selector, value }) => {
+    handler: async ({ tabId, selector, value, point }) => {
       mustAllow()
       if (!isValidId(tabId)) return { ok: false, error: "Invalid tabId" }
       const res = await runInTab(
         tabId,
-        (sel: string, val: string) => {
-          const el = document.querySelector(sel) as any
-          console.log("FILL selector", sel)
-          if (!el) return { ok: false, error: "Selector not found" }
-          const isInput =
-            el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement
-          const isCE =
-            !isInput &&
-            el &&
-            typeof el.isContentEditable === "boolean" &&
-            el.isContentEditable
-          if (isInput) {
-            el.focus()
-            el.value = val
-            el.dispatchEvent(new Event("input", { bubbles: true }))
-            el.dispatchEvent(new Event("change", { bubbles: true }))
-            return { ok: true }
-          } else if (isCE) {
-            el.focus()
-            el.textContent = val
-            el.dispatchEvent(new Event("input", { bubbles: true }))
-            el.dispatchEvent(new Event("change", { bubbles: true }))
-            return { ok: true }
+        (selOrUndefined?: string, val?: string, pt?: { x: number; y: number; unit?: string }) => {
+          const fill = (el: any, v: string) => {
+            const isInput = el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement
+            const isCE = !isInput && el && typeof el.isContentEditable === 'boolean' && el.isContentEditable
+            if (isInput) {
+              el.focus()
+              el.value = v
+              el.dispatchEvent(new Event('input', { bubbles: true }))
+              el.dispatchEvent(new Event('change', { bubbles: true }))
+              return { ok: true }
+            } else if (isCE) {
+              el.focus()
+              el.textContent = v
+              el.dispatchEvent(new Event('input', { bubbles: true }))
+              el.dispatchEvent(new Event('change', { bubbles: true }))
+              return { ok: true }
+            }
+            return { ok: false, error: 'Element is not fillable' }
           }
-          return { ok: false, error: "Element is not fillable" }
+          if (selOrUndefined && typeof selOrUndefined === 'string' && selOrUndefined.trim()) {
+            const el = document.querySelector(selOrUndefined) as any
+            console.log('FILL selector', selOrUndefined)
+            if (!el) return { ok: false, error: 'Selector not found' }
+            return fill(el, String(val ?? ''))
+          }
+          if (pt && typeof pt.x === 'number' && typeof pt.y === 'number') {
+            let x = pt.x
+            let y = pt.y
+            if (pt.unit === 'percent') {
+              x = Math.round((pt.x / 100) * window.innerWidth)
+              y = Math.round((pt.y / 100) * window.innerHeight)
+            }
+            const el = document.elementFromPoint(x, y) as any
+            console.log('FILL point', { x, y, unit: pt.unit, el })
+            if (!el) return { ok: false, error: 'No element at point' }
+            return fill(el, String(val ?? ''))
+          }
+          return { ok: false, error: 'Provide selector or point' }
         },
-        [String(selector), String(value)]
+        [
+          typeof selector === 'string' ? selector : undefined,
+          String(value ?? ''),
+          point && typeof point.x === 'number' && typeof point.y === 'number'
+            ? { x: Number(point.x), y: Number(point.y), unit: point?.unit || 'px' }
+            : undefined,
+        ]
       )
       return res
     },
@@ -195,23 +227,59 @@ export function createPageTools({
           type: Type.STRING,
           description: "CSS selector for the element.",
         },
+        point: {
+          type: Type.OBJECT,
+          description:
+            "Click at viewport coordinates instead of selector. Provide either selector or point.",
+          properties: {
+            x: { type: Type.INTEGER, description: "X coordinate." },
+            y: { type: Type.INTEGER, description: "Y coordinate." },
+            unit: {
+              type: Type.STRING,
+              description: "'px' or 'percent' (default 'px').",
+            },
+          },
+        },
       },
-      required: ["tabId", "selector"],
+      required: ["tabId"],
     },
-    handler: async ({ tabId, selector }) => {
+    handler: async ({ tabId, selector, point }) => {
       mustAllow()
       if (!isValidId(tabId)) return { ok: false, error: "Invalid tabId" }
       const res = await runInTab(
         tabId,
-        (sel: string) => {
-          const el = document.querySelector(sel) as HTMLElement | null
-          console.log("CLICK selector", sel)
-          if (!el) return { ok: false, error: "Selector not found" }
-          el.focus()
-          el.click()
-          return { ok: true }
+        (sel?: string, pt?: { x: number; y: number; unit?: string }) => {
+          const clickIt = (el: HTMLElement) => {
+            el.focus()
+            el.click()
+            return { ok: true }
+          }
+          if (sel && typeof sel === 'string' && sel.trim()) {
+            const el = document.querySelector(sel) as HTMLElement | null
+            console.log('CLICK selector', sel)
+            if (!el) return { ok: false, error: 'Selector not found' }
+            return clickIt(el)
+          }
+          if (pt && typeof pt.x === 'number' && typeof pt.y === 'number') {
+            let x = pt.x
+            let y = pt.y
+            if (pt.unit === 'percent') {
+              x = Math.round((pt.x / 100) * window.innerWidth)
+              y = Math.round((pt.y / 100) * window.innerHeight)
+            }
+            const el = document.elementFromPoint(x, y) as HTMLElement | null
+            console.log('CLICK point', { x, y, unit: pt.unit, el })
+            if (!el) return { ok: false, error: 'No element at point' }
+            return clickIt(el)
+          }
+          return { ok: false, error: 'Provide selector or point' }
         },
-        [String(selector)]
+        [
+          typeof selector === 'string' ? selector : undefined,
+          point && typeof point.x === 'number' && typeof point.y === 'number'
+            ? { x: Number(point.x), y: Number(point.y), unit: point?.unit || 'px' }
+            : undefined,
+        ]
       )
       return res
     },
@@ -230,6 +298,19 @@ export function createPageTools({
           type: Type.STRING,
           description: "Optional CSS selector to scroll inside.",
         },
+        point: {
+          type: Type.OBJECT,
+          description:
+            "Scroll container under viewport point if selector not provided.",
+          properties: {
+            x: { type: Type.INTEGER, description: "X coordinate." },
+            y: { type: Type.INTEGER, description: "Y coordinate." },
+            unit: {
+              type: Type.STRING,
+              description: "'px' or 'percent' (default 'px').",
+            },
+          },
+        },
         to: {
           type: Type.STRING,
           description: "Target position: 'top' | 'bottom'",
@@ -245,13 +326,29 @@ export function createPageTools({
       },
       required: ["tabId"],
     },
-    handler: async ({ tabId, selector, to, deltaY, behavior }) => {
+    handler: async ({ tabId, selector, to, deltaY, behavior, point }) => {
       mustAllow()
       if (!isValidId(tabId)) return { ok: false, error: "Invalid tabId" }
       const res = await runInTab(
         tabId,
-        (sel?: string, toPos?: string, dY?: number, beh?: ScrollBehavior) => {
-          const target: any = sel ? document.querySelector(sel) : window
+        (
+          sel?: string,
+          toPos?: string,
+          dY?: number,
+          beh?: ScrollBehavior,
+          pt?: { x: number; y: number; unit?: string }
+        ) => {
+          let target: any = sel ? document.querySelector(sel) : window
+          if (!sel && pt && typeof pt.x === 'number' && typeof pt.y === 'number') {
+            let x = pt.x
+            let y = pt.y
+            if (pt.unit === 'percent') {
+              x = Math.round((pt.x / 100) * window.innerWidth)
+              y = Math.round((pt.y / 100) * window.innerHeight)
+            }
+            const el = document.elementFromPoint(x, y) as HTMLElement | null
+            if (el) target = el
+          }
           console.log("SCROLL target", { sel, toPos, dY, beh, target })
           if (sel && !target) return { ok: false, error: "Selector not found" }
           const scrollOpts = { behavior: (beh as any) || "auto" }
@@ -293,6 +390,9 @@ export function createPageTools({
           to ?? undefined,
           typeof deltaY === "number" ? deltaY : undefined,
           behavior ?? undefined,
+          point && typeof point.x === 'number' && typeof point.y === 'number'
+            ? { x: Number(point.x), y: Number(point.y), unit: point?.unit || 'px' }
+            : undefined,
         ]
       )
       return res

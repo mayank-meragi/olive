@@ -2,6 +2,7 @@ import type { ToolRegistry } from '../genai'
 import { createPageTools } from './pageTools'
 import { createTaskTools } from './taskTools'
 import { createTabTools } from './tabTools'
+import { createScreenshotTools } from './screenshotTools'
 import type { TaskToolClient } from './types'
 import { createMustAllowGuard } from './utils'
 import { createToolRegistryBuilder } from './registry'
@@ -26,6 +27,7 @@ export function buildBrowserTools(opts: {
   const builder = createToolRegistryBuilder()
     .register(({ mustAllow }) => createTabTools({ mustAllow }))
     .register(({ mustAllow }) => createPageTools({ mustAllow }))
+    .register(({ mustAllow }) => createScreenshotTools({ mustAllow }))
 
   if (opts.taskClient) {
     builder.register(({ mustAllow }) =>
