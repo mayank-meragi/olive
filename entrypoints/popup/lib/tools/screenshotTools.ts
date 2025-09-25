@@ -2,6 +2,7 @@ import { Type } from "@google/genai"
 import type { ToolDefinition } from "../genai"
 import type { MustAllowFn } from "./types"
 import { isValidId, runInTab } from "./utils"
+import { updateScreenshotMeta } from "@/lib/vision/state"
 
 export function createScreenshotTools({
   mustAllow,
@@ -80,7 +81,21 @@ export function createScreenshotTools({
       const mimeType = match[1]
       const base64 = match[2]
 
-      return {
+      // Decode image size best-effort
+      let imageWidth = 0
+      let imageHeight = 0
+      try {
+        const img = new Image()
+        await new Promise<void>((resolve, reject) => {
+          img.onload = () => resolve()
+          img.onerror = () => resolve()
+          img.src = dataUrl
+        })
+        imageWidth = Number(img.naturalWidth || 0)
+        imageHeight = Number(img.naturalHeight || 0)
+      } catch {}
+
+      const result = {
         ok: true,
         screenshot: {
           mimeType,
@@ -93,11 +108,26 @@ export function createScreenshotTools({
           format: fmt,
           quality: fmt === "jpeg" ? q : undefined,
           capturedAt: Date.now(),
+          imageWidth,
+          imageHeight,
         },
-      }
+      } as const
+
+      // Update in-memory meta for mapping screenshot coordinates to viewport
+      try {
+        if (typeof result.meta?.tabId === 'number') {
+          updateScreenshotMeta({
+            tabId: result.meta.tabId!,
+            imageWidth: Number(imageWidth || 0),
+            imageHeight: Number(imageHeight || 0),
+            capturedAt: result.meta.capturedAt,
+          })
+        }
+      } catch {}
+
+      return result
     },
   }
 
   return { [takeScreenshot.name]: takeScreenshot }
 }
-

@@ -3,6 +3,7 @@ import { createPageTools } from './pageTools'
 import { createTaskTools } from './taskTools'
 import { createTabTools } from './tabTools'
 import { createScreenshotTools } from './screenshotTools'
+import { createLocatorTools } from './locatorTools'
 import type { TaskToolClient } from './types'
 import { createMustAllowGuard } from './utils'
 import { createToolRegistryBuilder } from './registry'
@@ -28,6 +29,7 @@ export function buildBrowserTools(opts: {
     .register(({ mustAllow }) => createTabTools({ mustAllow }))
     .register(({ mustAllow }) => createPageTools({ mustAllow }))
     .register(({ mustAllow }) => createScreenshotTools({ mustAllow }))
+    .register(({ mustAllow }) => createLocatorTools({ mustAllow }))
 
   if (opts.taskClient) {
     builder.register(({ mustAllow }) =>

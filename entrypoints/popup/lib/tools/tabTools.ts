@@ -178,6 +178,111 @@ export function createTabTools({
     },
   }
 
+  const groupTabs: ToolDefinition = {
+    name: "group_tabs",
+    displayName: "Group Tabs",
+    description:
+      "Group multiple tabs together using Firefox's native tab grouping. Tabs must be adjacent and will be moved if needed. Pinned tabs are automatically unpinned.",
+    parameters: {
+      type: Type.OBJECT,
+      properties: {
+        tabIds: {
+          type: Type.ARRAY,
+          description:
+            "Array of tab IDs to group together. Must contain at least one tab ID.",
+          items: { type: Type.INTEGER },
+        },
+        groupId: {
+          type: Type.INTEGER,
+          description:
+            "Optional: Add tabs to an existing group instead of creating a new one.",
+        },
+        title: {
+          type: Type.STRING,
+          description:
+            "Optional: Set a name for the tab group (uses tabGroups.update).",
+        },
+        createProperties: {
+          type: Type.OBJECT,
+          description: "Optional: Configuration for creating a new group.",
+          properties: {
+            windowId: {
+              type: Type.INTEGER,
+              description:
+                "Optional: The window ID for the new group. Defaults to current window.",
+            },
+          },
+        },
+      },
+      required: ["tabIds"],
+    },
+    handler: async ({ tabIds, groupId, createProperties, title }) => {
+      mustAllow()
+
+      // Validate tab IDs
+      const validTabIds = (tabIds || []).filter(isValidId)
+      if (validTabIds.length === 0) {
+        return { ok: false, error: "No valid tab IDs provided" }
+      }
+
+      try {
+        // Prepare options for Firefox tabs.group() API
+        const options: any = {
+          tabIds: validTabIds,
+        }
+
+        // If groupId is provided, add to existing group
+        if (typeof groupId === "number" && isValidId(groupId)) {
+          options.groupId = groupId
+        }
+
+        // If createProperties is provided, add it for new group creation
+        if (createProperties && typeof createProperties === "object") {
+          options.createProperties = {}
+          if (
+            typeof createProperties.windowId === "number" &&
+            isValidId(createProperties.windowId)
+          ) {
+            options.createProperties.windowId = createProperties.windowId
+          }
+        }
+
+        // Use Firefox's tabs.group() API
+        const resultGroupId = await (browser as any).tabs.group(options)
+
+        // If a title is provided, attempt to set the group name via tabGroups.update
+        let groupTitle: string | undefined
+        if (resultGroupId != null && typeof title === "string" && title.trim()) {
+          try {
+            const tg = (browser as any).tabGroups ?? (globalThis as any).chrome?.tabGroups
+            if (tg?.update) {
+              await tg.update(resultGroupId, { title: String(title) })
+              if (tg?.get) {
+                const grp = await tg.get(resultGroupId)
+                groupTitle = grp?.title
+              } else {
+                groupTitle = String(title)
+              }
+            }
+          } catch (e) {
+            // No-op if tabGroups API is unavailable or update fails
+          }
+        }
+
+        return {
+          ok: true,
+          groupId: resultGroupId,
+          tabIds: validTabIds,
+          addedToExistingGroup:
+            typeof groupId === "number" && isValidId(groupId),
+          title: groupTitle,
+        }
+      } catch (e: any) {
+        return { ok: false, error: e?.message ?? String(e) }
+      }
+    },
+  }
+
   return {
     [openTab.name]: openTab,
     [closeTab.name]: closeTab,
@@ -185,5 +290,6 @@ export function createTabTools({
     [navigateTab.name]: navigateTab,
     [reloadTab.name]: reloadTab,
     [listTabs.name]: listTabs,
+    [groupTabs.name]: groupTabs,
   }
 }

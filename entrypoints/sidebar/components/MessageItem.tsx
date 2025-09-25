@@ -60,9 +60,9 @@ export function MessageItem({
             </div>
           </div>
         ) : (
-          <>
+          <div className="relative">
             {isUser && !editing && (
-              <div className="absolute right-5">
+              <div className="absolute right-0 top-0">
                 <Button
                   size="icon"
                   variant="ghost"
@@ -74,7 +74,7 @@ export function MessageItem({
               </div>
             )}
             <MarkdownRenderer>{entry.text}</MarkdownRenderer>
-          </>
+          </div>
         )}
       </div>
       {isUser && Array.isArray(entry.ctxTabs) && entry.ctxTabs.length > 0 && (
