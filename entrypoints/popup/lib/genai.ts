@@ -26,30 +26,40 @@ export type {
   ToolRegistry,
 } from './ai/types'
 
-async function buildMcpToolRegistry(
-  mcp: McpClientAdapter,
+async function buildMcpToolRegistryFromAdapters(
+  mcps: McpClientAdapter[],
 ): Promise<ToolRegistry> {
-  const tools: ToolRegistry = {}
-  try {
-    const mcpTools: McpToolListItem[] = await mcp.listAllTools()
-    for (const t of mcpTools) {
-      const name = t.name
-      if (!name) continue
-      tools[name] = {
-        name,
-        displayName: name,
-        description: t.description,
-        parameters: t.inputSchema ?? {},
-        handler: async (args: any) => {
-          const res = await mcp.callTool(name, args)
-          return res
-        },
+  const entries: Array<{ name: string; adapter: McpClientAdapter; tool: McpToolListItem }> = []
+  for (const mcp of mcps) {
+    try {
+      const mcpTools = await mcp.listAllTools()
+      for (const t of mcpTools) {
+        if (!t?.name) continue
+        entries.push({ name: t.name, adapter: mcp, tool: t })
       }
+    } catch (e) {
+      console.warn('[genai][mcp] failed to list tools for adapter', mcp?.label, e)
     }
-  } catch (e) {
-    console.warn('[genai][mcp] failed to build MCP tools', e)
   }
-  return tools
+  // Count duplicates by name
+  const counts = new Map<string, number>()
+  for (const e of entries) counts.set(e.name, (counts.get(e.name) ?? 0) + 1)
+
+  const registry: ToolRegistry = {}
+  for (const e of entries) {
+    const duplicate = (counts.get(e.name) ?? 0) > 1
+    const uniqueName = duplicate
+      ? `${e.name}__${(e.adapter.label ?? 'server').replace(/\s+/g, '_')}`
+      : e.name
+    registry[uniqueName] = {
+      name: uniqueName,
+      displayName: duplicate && e.adapter.label ? `${e.name} (${e.adapter.label})` : e.name,
+      description: e.tool.description,
+      parameters: e.tool.inputSchema ?? {},
+      handler: async (args: any) => e.adapter.callTool(e.name, args),
+    }
+  }
+  return registry
 }
 
 export async function generateWithGemini(
@@ -82,11 +92,12 @@ export async function generateWithGemini(
   const contents: any[] = buildHistoryContents(opts)
   contents.push({ role: 'user', parts: [{ text: prompt }] })
 
-  // Merge local tools with MCP tools if provided
+  // Merge local tools with MCP tools if provided (supports multiple MCP adapters)
   let mergedTools: ToolRegistry = { ...(opts.tools ?? {}) }
-  const mcp: McpClientAdapter | undefined = (opts as any)?.mcpClient
-  if (mcp) {
-    const mcpRegistry = await buildMcpToolRegistry(mcp)
+  const mcpsRaw = (opts as any)?.mcpClient as McpClientAdapter | McpClientAdapter[] | undefined
+  const mcps = Array.isArray(mcpsRaw) ? mcpsRaw : mcpsRaw ? [mcpsRaw] : []
+  if (mcps.length) {
+    const mcpRegistry = await buildMcpToolRegistryFromAdapters(mcps)
     mergedTools = { ...mergedTools, ...mcpRegistry }
   }
 

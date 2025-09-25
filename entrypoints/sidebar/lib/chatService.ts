@@ -1,5 +1,5 @@
 import { generateWithGemini, type ToolEvent } from '@/lib/genai'
-import { createMcpClientFromStorage } from '@/lib/mcp/client'
+import { createAllMcpClientsFromStorage } from '@/lib/mcp/client'
 import { buildBrowserTools, type TaskToolClient } from '@/lib/tools'
 
 export type RunChatCallbacks = {
@@ -43,14 +43,14 @@ export async function runChat({
   const tools = buildBrowserTools({ autoRun: autoRunTools, taskClient })
 
   // Try to create an MCP client based on saved settings
-  const mcpClient = await createMcpClientFromStorage().catch(() => null)
+  const mcpClients = await createAllMcpClientsFromStorage().catch(() => [])
   const { events } = await generateWithGemini(prompt, {
     model,
     thinkingEnabled,
     debug: true,
     tools,
     // If MCP client is available, merge its tools into the registry
-    mcpClient: mcpClient ?? undefined,
+    mcpClient: mcpClients.length ? mcpClients : undefined,
     history,
     onToolCall: callbacks.onToolCall,
     onToolResult: callbacks.onToolResult,
@@ -59,10 +59,8 @@ export async function runChat({
     shouldContinue: callbacks.shouldContinue,
   })
   // Close MCP client after run
-  try {
-    await mcpClient?.close()
-  } catch {
-    // ignore
+  for (const c of mcpClients) {
+    try { await c.close() } catch { /* ignore */ }
   }
   console.log('[chatService] runChat complete', { events })
   return { events }

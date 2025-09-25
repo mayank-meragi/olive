@@ -10,6 +10,7 @@ export type McpToolListItem = {
 }
 
 export type McpClientAdapter = {
+  label?: string
   listAllTools: () => Promise<McpToolListItem[]>
   callTool: (name: string, args: any) => Promise<any>
   close: () => Promise<void>
@@ -86,6 +87,7 @@ export async function createMcpClientFromStorage(): Promise<McpClientAdapter | n
     await client.connect(transport)
 
     const adapter: McpClientAdapter = {
+      label: server.name ?? server.id,
       listAllTools: () => listAllTools(client),
       callTool: async (name: string, args: any) => {
         return await client.callTool({ name, arguments: args })
@@ -103,4 +105,56 @@ export async function createMcpClientFromStorage(): Promise<McpClientAdapter | n
     console.warn('[mcp] failed to create/connect MCP client', e)
     return null
   }
+}
+
+export async function createAllMcpClientsFromStorage(): Promise<McpClientAdapter[]> {
+  const adapters: McpClientAdapter[] = []
+  try {
+    const {
+      mcpServers,
+      mcpEnabled,
+      mcpBaseUrl,
+    } = (await browser.storage.local.get([
+      'mcpServers',
+      'mcpEnabled',
+      'mcpBaseUrl',
+    ])) as {
+      mcpServers?: StoredMcpServer[]
+      mcpEnabled?: boolean
+      mcpBaseUrl?: string
+    }
+
+    const servers: StoredMcpServer[] = []
+    if (Array.isArray(mcpServers)) {
+      servers.push(...mcpServers.filter((s) => s.enabled !== false && String(s.baseUrl ?? '').trim()))
+    }
+    if ((!servers.length) && mcpEnabled && mcpBaseUrl) {
+      servers.push({ id: 'default', name: 'Default', baseUrl: mcpBaseUrl, enabled: true })
+    }
+
+    for (const s of servers) {
+      try {
+        const client = new Client({ name: 'olive', version: '0.1.0' })
+        const transport = new StreamableHTTPClientTransport(new URL(String(s.baseUrl).trim()), {
+          requestInit: s.headers ? { headers: s.headers } : undefined,
+        })
+        await client.connect(transport)
+        adapters.push({
+          label: s.name ?? s.id,
+          listAllTools: () => listAllTools(client),
+          callTool: async (name: string, args: any) => client.callTool({ name, arguments: args }),
+          close: async () => {
+            try {
+              await client.close()
+            } catch {}
+          },
+        })
+      } catch (e) {
+        console.warn('[mcp] failed to connect to server', s.baseUrl, e)
+      }
+    }
+  } catch (e) {
+    console.warn('[mcp] failed to enumerate servers', e)
+  }
+  return adapters
 }

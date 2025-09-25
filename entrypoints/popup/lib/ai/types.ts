@@ -32,13 +32,21 @@ export type GenerateOptions = {
     result?: any
     error?: string
   }) => void
-  // Optional MCP client adapter; when provided, MCP tools will be
+  // Optional MCP client adapter(s); when provided, MCP tools will be
   // dynamically discovered and merged into the tool registry.
-  mcpClient?: {
-    listAllTools: () => Promise<Array<{ name: string; description?: string; inputSchema?: any }>>
-    callTool: (name: string, args: any) => Promise<any>
-    close: () => Promise<void>
-  }
+  mcpClient?:
+    | {
+        label?: string
+        listAllTools: () => Promise<Array<{ name: string; description?: string; inputSchema?: any }>>
+        callTool: (name: string, args: any) => Promise<any>
+        close: () => Promise<void>
+      }
+    | Array<{
+        label?: string
+        listAllTools: () => Promise<Array<{ name: string; description?: string; inputSchema?: any }>>
+        callTool: (name: string, args: any) => Promise<any>
+        close: () => Promise<void>
+      }>
 }
 
 export type ToolHandlerContext = {}
