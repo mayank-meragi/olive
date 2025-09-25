@@ -14,6 +14,7 @@ import { useScrollToBottom } from "./useScrollToBottom"
 import { useStorageSync } from "./useStorageSync"
 import { useTextareaAutoResize } from "./useTextareaAutoResize"
 import type { SavedCommand } from "../types"
+import { DEFAULT_SAVED_COMMANDS } from "../lib/commands"
 
 type PendingTool = { id: string; name: string }
 
@@ -137,9 +138,9 @@ export function useChatController() {
   const [streaming, setStreaming] = useState(false)
   const [tabPickerOpen, setTabPickerOpen] = useState(false)
   const [slashPickerOpen, setSlashPickerOpen] = useState(false)
-  const [savedCommands, setSavedCommands] = useStorageSync<SavedCommand[]>(
+  const [savedCommands, setSavedCommands, savedCmdsReady] = useStorageSync<SavedCommand[]>(
     "oliveSavedCommands",
-    []
+    DEFAULT_SAVED_COMMANDS
   )
   const [allTabs, setAllTabs] = useState<Array<Browser.tabs.Tab>>([])
   const [selectedTabIds, setSelectedTabIds] = useState<Set<number>>(new Set())
@@ -155,6 +156,14 @@ export function useChatController() {
 
   useScrollToBottom(listRef, messages.length)
   useTextareaAutoResize(textareaRef, draft)
+
+  // Ensure defaults are present if storage has an empty array
+  useEffect(() => {
+    if (!savedCmdsReady) return
+    if (!Array.isArray(savedCommands) || savedCommands.length === 0) {
+      setSavedCommands(DEFAULT_SAVED_COMMANDS)
+    }
+  }, [savedCmdsReady, savedCommands, setSavedCommands])
 
   const tasks = useMemo(() => extractTasksFromMessages(messages), [messages])
 

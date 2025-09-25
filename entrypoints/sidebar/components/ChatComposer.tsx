@@ -9,6 +9,7 @@ import { Switch } from "@/components/ui/switch"
 import { useEffect, useMemo, useState } from "react"
 import { ChatInput } from "./ChatInput"
 import { UnifiedPicker, type PickerMode } from "./UnifiedPicker"
+import { DEFAULT_SAVED_COMMANDS } from "../lib/commands"
 import { useChatControllerContext } from "../context/ChatControllerContext"
 
 export function ChatComposer() {
@@ -82,6 +83,7 @@ export function ChatComposer() {
         selectedTabIds={selectedTabIds}
         onToggleTab={toggleTabSelection}
         savedCommands={savedCommands}
+        defaultCommands={DEFAULT_SAVED_COMMANDS}
         setSavedCommands={setSavedCommands}
         onSelectCommand={(cmd) => {
           const ta = textareaRef.current

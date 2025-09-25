@@ -18,6 +18,7 @@ export function UnifiedPicker({
   onToggleTab,
   // Commands props
   savedCommands,
+  defaultCommands = [],
   setSavedCommands,
   onSelectCommand,
 }: {
@@ -30,6 +31,7 @@ export function UnifiedPicker({
   selectedTabIds: Set<number>
   onToggleTab: (id: number) => void
   savedCommands: SavedCommand[]
+  defaultCommands?: SavedCommand[]
   setSavedCommands: React.Dispatch<React.SetStateAction<SavedCommand[]>>
   onSelectCommand: (cmd: SavedCommand) => void
 }) {
@@ -69,15 +71,24 @@ export function UnifiedPicker({
 
   const filteredCmds = useMemo(() => {
     if (mode !== 'commands') return []
+    // Merge defaults + saved (defaults first), dedupe by id
+    const merged: SavedCommand[] = []
+    const seen = new Set<string>()
+    for (const c of [...defaultCommands, ...savedCommands]) {
+      if (c && typeof c.id === 'string' && !seen.has(c.id)) {
+        seen.add(c.id)
+        merged.push(c)
+      }
+    }
     const q = query.trim().toLowerCase()
-    if (!q) return savedCommands
-    return savedCommands.filter(
+    if (!q) return merged
+    return merged.filter(
       (c) =>
         c.name.toLowerCase().includes(q) ||
         c.type.toLowerCase().includes(q) ||
         c.text.toLowerCase().includes(q)
     )
-  }, [mode, query, savedCommands])
+  }, [mode, query, savedCommands, defaultCommands])
 
   useEffect(() => {
     const len = mode === 'tabs' ? filteredTabs.length : filteredCmds.length
@@ -268,30 +279,32 @@ export function UnifiedPicker({
                       (i === highlightIndex ? 'outline outline-1 outline-primary' : '')
                     }
                   >
-                    <button
-                      type="button"
-                      className="flex-1 text-left"
-                      onClick={() => onSelectCommand(c)}
-                      title={c.text}
-                    >
-                      <div className="font-medium truncate">{c.name}</div>
-                      <div className="text-xs text-muted-foreground truncate">{c.type || 'Command'}</div>
-                    </button>
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="ghost"
-                      onClick={() => {
-                        setSavedCommands((prev) => prev.filter((x) => x.id !== c.id))
-                      }}
-                      title="Delete"
-                    >
-                      ✕
-                    </Button>
-                  </div>
-                ))
-              )}
-            </div>
+                <button
+                  type="button"
+                  className="flex-1 text-left"
+                  onClick={() => onSelectCommand(c)}
+                  title={c.text}
+                >
+                  <div className="font-medium truncate">{c.name}</div>
+                  <div className="text-xs text-muted-foreground truncate">{c.type || 'Command'}</div>
+                </button>
+                {defaultCommands.some((d) => d.id === c.id) ? null : (
+                  <Button
+                  type="button"
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => {
+                    setSavedCommands((prev) => prev.filter((x) => x.id !== c.id))
+                  }}
+                  title="Delete"
+                >
+                  ✕
+                  </Button>
+                )}
+              </div>
+            ))
+          )}
+        </div>
           </>
         )}
         <div className="flex items-center justify-end border-t p-2">
@@ -303,4 +316,3 @@ export function UnifiedPicker({
     </Popover>
   )
 }
-
