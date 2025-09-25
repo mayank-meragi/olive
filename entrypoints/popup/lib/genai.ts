@@ -33,8 +33,13 @@ async function buildMcpToolRegistryFromAdapters(
   for (const mcp of mcps) {
     try {
       const mcpTools = await mcp.listAllTools()
+      // If selectedTools is provided and non-empty, filter by it
+      const allow = Array.isArray(mcp.selectedTools) && mcp.selectedTools.length
+        ? new Set(mcp.selectedTools)
+        : undefined
       for (const t of mcpTools) {
         if (!t?.name) continue
+        if (allow && !allow.has(t.name)) continue
         entries.push({ name: t.name, adapter: mcp, tool: t })
       }
     } catch (e) {

@@ -3,7 +3,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
-import { Plus, Save, Trash2, Check, X, TestTube2, Radio } from 'lucide-react'
+import { Plus, Save, Trash2, TestTube2, Radio, CheckSquare, Square, ChevronDown } from 'lucide-react'
 import type { StoredMcpServer } from '@/lib/mcp/client'
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js'
@@ -31,6 +31,10 @@ export function McpServersPanel() {
   const [loading, setLoading] = useState(true)
   const [testingId, setTestingId] = useState<string | null>(null)
   const [testStatus, setTestStatus] = useState<Record<string, string>>({})
+  const [toolsMap, setToolsMap] = useState<Record<string, McpToolItem[]>>({})
+  const [expanded, setExpanded] = useState<Record<string, boolean>>({})
+
+  type McpToolItem = { name: string; description?: string; selected: boolean }
 
   useEffect(() => {
     ;(async () => {
@@ -66,8 +70,18 @@ export function McpServersPanel() {
 
   const saveAll = async () => {
     const cleaned = servers.map(({ _isNew, ...s }) => s)
-    await saveServers(cleaned, activeId)
-    setServers(cleaned)
+    // Persist selected tools into server entries
+    const withSelections = cleaned.map((s) => {
+      const list = toolsMap[s.id]
+      if (Array.isArray(list) && list.length) {
+        const selected = list.filter((t) => t.selected).map((t) => t.name)
+        return { ...s, selectedTools: selected }
+      }
+      // If we have no in-memory list, keep what user already had
+      return s
+    })
+    await saveServers(withSelections, activeId)
+    setServers(withSelections)
   }
 
   const testConnection = async (srv: EditableServer) => {
@@ -90,6 +104,15 @@ export function McpServersPanel() {
       await client.close()
       const count = Array.isArray(list?.tools) ? list.tools.length : 0
       setTestStatus((prev) => ({ ...prev, [srv.id]: `OK — ${count} tool(s)` }))
+      // Update toolsMap with fetched tools, preserving existing selections
+      const existing = toolsMap[srv.id] ?? []
+      const selectedSet = new Set(existing.filter((t) => t.selected).map((t) => t.name))
+      const fetched: McpToolItem[] = (Array.isArray(list?.tools) ? list.tools : []).map((t: any) => ({
+        name: String(t?.name ?? ''),
+        description: t?.description,
+        selected: existing.length ? selectedSet.has(String(t?.name ?? '')) : Array.isArray(srv.selectedTools) ? srv.selectedTools.includes(String(t?.name ?? '')) : true,
+      })).filter((t) => t.name)
+      setToolsMap((prev) => ({ ...prev, [srv.id]: fetched }))
     } catch (e: any) {
       const msg = e?.message ? String(e.message) : String(e)
       setTestStatus((prev) => ({ ...prev, [srv.id]: `Failed — ${msg}` }))
@@ -144,6 +167,14 @@ export function McpServersPanel() {
                     onChange={(e) => updateServer(srv.id, { name: e.target.value })}
                     placeholder="Server name"
                   />
+                  <button
+                    className="inline-flex items-center rounded px-2 py-1 text-xs bg-muted text-muted-foreground"
+                    onClick={() => setExpanded((prev) => ({ ...prev, [srv.id]: !prev[srv.id] }))}
+                    aria-expanded={!!expanded[srv.id]}
+                    title="Toggle tools section"
+                  >
+                    <ChevronDown className={`mr-1 h-3 w-3 transition-transform ${expanded[srv.id] ? 'rotate-180' : ''}`} /> Tools
+                  </button>
                 </div>
                 <div className="flex items-center gap-2">
                   <div className="flex items-center gap-1 text-xs">
@@ -221,6 +252,73 @@ export function McpServersPanel() {
                   </Button>
                 </div>
               </div>
+
+              {expanded[srv.id] && (
+                <div className="mt-3 rounded-md border p-2">
+                  <div className="mb-2 flex items-center justify-between">
+                    <div className="text-xs font-medium">Tool selection</div>
+                    <div className="flex items-center gap-2">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => testConnection(srv)}
+                        disabled={testingId === srv.id}
+                        title="Fetch tools"
+                      >
+                        Refresh
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => {
+                          const list = toolsMap[srv.id] ?? []
+                          const next = list.map((t) => ({ ...t, selected: true }))
+                          setToolsMap((prev) => ({ ...prev, [srv.id]: next }))
+                        }}
+                      >
+                        Select all
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => {
+                          const list = toolsMap[srv.id] ?? []
+                          const next = list.map((t) => ({ ...t, selected: false }))
+                          setToolsMap((prev) => ({ ...prev, [srv.id]: next }))
+                        }}
+                      >
+                        Clear
+                      </Button>
+                    </div>
+                  </div>
+                  <div className="max-h-40 overflow-auto space-y-1">
+                    {(toolsMap[srv.id] ?? []).length === 0 ? (
+                      <div className="text-xs text-muted-foreground">No tools loaded. Click Refresh to fetch.</div>
+                    ) : (
+                      (toolsMap[srv.id] ?? []).map((t) => (
+                        <label key={t.name} className="flex cursor-pointer items-center gap-2 text-xs">
+                          <input
+                            type="checkbox"
+                            checked={t.selected}
+                            onChange={(e) => {
+                              const list = toolsMap[srv.id] ?? []
+                              const next = list.map((x) => (x.name === t.name ? { ...x, selected: e.target.checked } : x))
+                              setToolsMap((prev) => ({ ...prev, [srv.id]: next }))
+                            }}
+                          />
+                          <span className="truncate">
+                            <span className="font-medium">{t.name}</span>
+                            {t.description ? <span className="text-muted-foreground"> — {t.description}</span> : null}
+                          </span>
+                        </label>
+                      ))
+                    )}
+                  </div>
+                  <div className="mt-2 text-[10px] text-muted-foreground">
+                    {(toolsMap[srv.id] ?? []).filter((t) => t.selected).length} selected of {(toolsMap[srv.id] ?? []).length}
+                  </div>
+                </div>
+              )}
             </div>
           ))}
         </div>
@@ -228,4 +326,3 @@ export function McpServersPanel() {
     </div>
   )
 }
-

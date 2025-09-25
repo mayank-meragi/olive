@@ -11,6 +11,7 @@ export type McpToolListItem = {
 
 export type McpClientAdapter = {
   label?: string
+  selectedTools?: string[]
   listAllTools: () => Promise<McpToolListItem[]>
   callTool: (name: string, args: any) => Promise<any>
   close: () => Promise<void>
@@ -38,6 +39,7 @@ export type StoredMcpServer = {
   baseUrl: string
   enabled?: boolean
   headers?: Record<string, string>
+  selectedTools?: string[]
 }
 
 export async function createMcpClientFromStorage(): Promise<McpClientAdapter | null> {
@@ -88,6 +90,7 @@ export async function createMcpClientFromStorage(): Promise<McpClientAdapter | n
 
     const adapter: McpClientAdapter = {
       label: server.name ?? server.id,
+      selectedTools: Array.isArray(server.selectedTools) ? server.selectedTools : undefined,
       listAllTools: () => listAllTools(client),
       callTool: async (name: string, args: any) => {
         return await client.callTool({ name, arguments: args })
@@ -141,6 +144,7 @@ export async function createAllMcpClientsFromStorage(): Promise<McpClientAdapter
         await client.connect(transport)
         adapters.push({
           label: s.name ?? s.id,
+          selectedTools: Array.isArray(s.selectedTools) ? s.selectedTools : undefined,
           listAllTools: () => listAllTools(client),
           callTool: async (name: string, args: any) => client.callTool({ name, arguments: args }),
           close: async () => {
