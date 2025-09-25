@@ -10,6 +10,7 @@ export function ChatInput({
   onStop,
   textareaRef,
   onAtTrigger,
+  onSlashTrigger,
 }: {
   draft: string
   setDraft: (v: string) => void
@@ -18,12 +19,13 @@ export function ChatInput({
   onStop: () => void
   textareaRef: React.RefObject<HTMLTextAreaElement | null>
   onAtTrigger: () => void
+  onSlashTrigger: () => void
 }) {
   return (
     <div className="flex gap-2">
       <textarea
         ref={textareaRef}
-        placeholder="Ask anything... Press @ to add tabs"
+        placeholder="Ask anything... Press @ to add tabs, / for commands"
         value={draft}
         onChange={(e) => {
           const next = e.target.value
@@ -32,6 +34,12 @@ export function ChatInput({
           if (shouldOpen) {
             console.log("[ChatInput] onChange detected '@'", { prev: draft, next })
             onAtTrigger()
+          }
+          // Heuristic: if the user just typed one character and it's '/', open slash picker.
+          const slashOpen = next.length === draft.length + 1 && next.endsWith("/")
+          if (slashOpen) {
+            console.log("[ChatInput] onChange detected '/'", { prev: draft, next })
+            onSlashTrigger()
           }
           if (!shouldOpen) {
             // Log key edit without trigger for debugging
@@ -55,6 +63,12 @@ export function ChatInput({
             e.preventDefault()
             console.log("[ChatInput] opening TabPicker via keydown trigger")
             onAtTrigger()
+            return
+          }
+          if (e.key === "/" && !e.metaKey && !e.ctrlKey && !e.altKey) {
+            e.preventDefault()
+            console.log("[ChatInput] opening SlashCommandPicker via keydown trigger")
+            onSlashTrigger()
             return
           }
           if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {

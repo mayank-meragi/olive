@@ -6,9 +6,9 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { Switch } from "@/components/ui/switch"
-import { useEffect, useMemo } from "react"
+import { useEffect, useMemo, useState } from "react"
 import { ChatInput } from "./ChatInput"
-import { TabPicker } from "./TabPicker"
+import { UnifiedPicker, type PickerMode } from "./UnifiedPicker"
 import { useChatControllerContext } from "../context/ChatControllerContext"
 
 export function ChatComposer() {
@@ -32,11 +32,14 @@ export function ChatComposer() {
     setThinking,
     autoRunTools,
     setAutoRunTools,
+    savedCommands,
+    setSavedCommands,
   } = useChatControllerContext()
   const selectedTabs = useMemo(
     () => allTabs.filter((t) => (t.id ? selectedTabIds.has(t.id) : false)),
     [allTabs, selectedTabIds]
   )
+  const [pickerMode, setPickerMode] = useState<PickerMode>('tabs')
 
   useEffect(() => {
     console.log('[ChatComposer] tabPickerOpen state changed', { tabPickerOpen })
@@ -50,13 +53,10 @@ export function ChatComposer() {
         handleSubmit(draft)
       }}
     >
-      <TabPicker
+      <UnifiedPicker
         open={tabPickerOpen}
+        mode={pickerMode}
         onOpenChange={setTabPickerOpen}
-        allTabs={allTabs}
-        setAllTabs={setAllTabs}
-        selectedTabIds={selectedTabIds}
-        onToggle={toggleTabSelection}
         anchor={
           <ChatInput
             draft={draft}
@@ -66,11 +66,45 @@ export function ChatComposer() {
             onStop={handleStop}
             textareaRef={textareaRef}
             onAtTrigger={() => {
-              console.log('[ChatComposer] onAtTrigger called, opening TabPicker')
+              console.log('[ChatComposer] onAtTrigger -> open picker (tabs)')
+              setPickerMode('tabs')
+              setTabPickerOpen(true)
+            }}
+            onSlashTrigger={() => {
+              console.log('[ChatComposer] onSlashTrigger -> open picker (commands)')
+              setPickerMode('commands')
               setTabPickerOpen(true)
             }}
           />
         }
+        allTabs={allTabs}
+        setAllTabs={setAllTabs}
+        selectedTabIds={selectedTabIds}
+        onToggleTab={toggleTabSelection}
+        savedCommands={savedCommands}
+        setSavedCommands={setSavedCommands}
+        onSelectCommand={(cmd) => {
+          const ta = textareaRef.current
+          const text = cmd.text
+          if (!ta) {
+            setDraft((prev) => (prev ? prev + '\n' + text : text))
+            setTabPickerOpen(false)
+            return
+          }
+          const start = ta.selectionStart ?? draft.length
+          const end = ta.selectionEnd ?? draft.length
+          const replaceFrom = start > 0 && draft[start - 1] === '/' ? start - 1 : start
+          const nextDraft = draft.slice(0, replaceFrom) + text + draft.slice(end)
+          setDraft(nextDraft)
+          setTabPickerOpen(false)
+          setTimeout(() => {
+            try {
+              const caret = replaceFrom + text.length
+              ta.focus()
+              ta.setSelectionRange(caret, caret)
+            } catch {}
+          }, 0)
+        }}
       />
       {/* Debug: log tabPickerOpen changes */}
       {selectedTabs.length > 0 && (

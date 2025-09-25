@@ -13,6 +13,7 @@ import type {
 import { useScrollToBottom } from "./useScrollToBottom"
 import { useStorageSync } from "./useStorageSync"
 import { useTextareaAutoResize } from "./useTextareaAutoResize"
+import type { SavedCommand } from "../types"
 
 type PendingTool = { id: string; name: string }
 
@@ -135,6 +136,11 @@ export function useChatController() {
   const stopRequested = useRef(false)
   const [streaming, setStreaming] = useState(false)
   const [tabPickerOpen, setTabPickerOpen] = useState(false)
+  const [slashPickerOpen, setSlashPickerOpen] = useState(false)
+  const [savedCommands, setSavedCommands] = useStorageSync<SavedCommand[]>(
+    "oliveSavedCommands",
+    []
+  )
   const [allTabs, setAllTabs] = useState<Array<Browser.tabs.Tab>>([])
   const [selectedTabIds, setSelectedTabIds] = useState<Set<number>>(new Set())
   const lastAiIdRef = useRef<string | null>(null)
@@ -275,10 +281,10 @@ export function useChatController() {
   ])
 
   useEffect(() => {
-    if (tabPickerOpen) return
+    if (tabPickerOpen || slashPickerOpen) return
     const id = setTimeout(() => textareaRef.current?.focus(), 0)
     return () => clearTimeout(id)
-  }, [tabPickerOpen])
+  }, [tabPickerOpen, slashPickerOpen])
 
   const toggleTabSelection = useCallback((id: number) => {
     setSelectedTabIds((prev) => {
@@ -1149,6 +1155,10 @@ export function useChatController() {
     setAutoRunTools,
     tabPickerOpen,
     setTabPickerOpen,
+    slashPickerOpen,
+    setSlashPickerOpen,
+    savedCommands,
+    setSavedCommands,
     allTabs,
     setAllTabs,
     selectedTabIds,

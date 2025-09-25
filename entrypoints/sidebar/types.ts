@@ -81,3 +81,10 @@ export type Conversation = {
   updatedAt: number
   tasks?: Task[]
 }
+
+export type SavedCommand = {
+  id: string
+  name: string
+  type: string
+  text: string
+}
