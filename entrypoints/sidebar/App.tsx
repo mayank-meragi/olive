@@ -1,10 +1,11 @@
 import { Button } from "@/components/ui/button"
-import { History, Plus, Trash } from "lucide-react"
+import { History, Plus, Trash, Server } from "lucide-react"
 import { useState } from "react"
 import { ChatComposer } from "./components/ChatComposer"
 import { MessageList } from "./components/MessageList"
 import { TasksPanel } from "./components/TasksPanel"
 import { ChatControllerProvider, useChatControllerContext } from "./context/ChatControllerContext"
+import { McpServersPanel } from "./components/McpServersPanel"
 
 function formatConversationTime(timestamp?: number) {
   if (!timestamp) return ""
@@ -41,6 +42,12 @@ function SidebarContent() {
     tasks,
   } = useChatControllerContext()
   const [historyOpen, setHistoryOpen] = useState(false)
+  const [mcpOpen, setMcpOpen] = useState(false)
+  
+  const closePanels = () => {
+    setHistoryOpen(false)
+    setMcpOpen(false)
+  }
 
   return (
     <div className="flex h-screen w-full flex-col">
@@ -50,7 +57,7 @@ function SidebarContent() {
           <Button
             onClick={() => {
               startNewConversation()
-              setHistoryOpen(false)
+              closePanels()
             }}
             variant="outline"
             size="icon"
@@ -60,13 +67,34 @@ function SidebarContent() {
             <Plus className="h-4 w-4" />
           </Button>
           <Button
-            onClick={() => setHistoryOpen((prev) => !prev)}
+            onClick={() => {
+              setHistoryOpen((prev) => {
+                const next = !prev
+                if (next) setMcpOpen(false)
+                return next
+              })
+            }}
             variant={historyOpen ? "default" : "outline"}
             size="icon"
             aria-pressed={historyOpen}
             aria-label="Toggle history"
           >
             <History className="h-4 w-4" />
+          </Button>
+          <Button
+            onClick={() => {
+              setMcpOpen((prev) => {
+                const next = !prev
+                if (next) setHistoryOpen(false)
+                return next
+              })
+            }}
+            variant={mcpOpen ? "default" : "outline"}
+            size="icon"
+            aria-pressed={mcpOpen}
+            aria-label="Toggle MCP servers"
+          >
+            <Server className="h-4 w-4" />
           </Button>
         </div>
       </div>
@@ -128,6 +156,10 @@ function SidebarContent() {
               })}
             </div>
           )}
+        </div>
+      ) : mcpOpen ? (
+        <div className="flex-1 overflow-auto">
+          <McpServersPanel />
         </div>
       ) : (
         <>

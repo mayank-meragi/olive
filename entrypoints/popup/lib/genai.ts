@@ -1,4 +1,5 @@
 import { SYSTEM_INSTRUCTIONS } from './prompts'
+import type { McpClientAdapter, McpToolListItem } from '../mcp/client'
 import { getLatestTaskInstruction } from './taskContext'
 import { createGeminiClient, getDefaultModel } from './ai/client'
 import { tryDebug } from './ai/debug'
@@ -24,6 +25,32 @@ export type {
   ToolHandlerContext,
   ToolRegistry,
 } from './ai/types'
+
+async function buildMcpToolRegistry(
+  mcp: McpClientAdapter,
+): Promise<ToolRegistry> {
+  const tools: ToolRegistry = {}
+  try {
+    const mcpTools: McpToolListItem[] = await mcp.listAllTools()
+    for (const t of mcpTools) {
+      const name = t.name
+      if (!name) continue
+      tools[name] = {
+        name,
+        displayName: name,
+        description: t.description,
+        parameters: t.inputSchema ?? {},
+        handler: async (args: any) => {
+          const res = await mcp.callTool(name, args)
+          return res
+        },
+      }
+    }
+  } catch (e) {
+    console.warn('[genai][mcp] failed to build MCP tools', e)
+  }
+  return tools
+}
 
 export async function generateWithGemini(
   prompt: string,
@@ -55,10 +82,18 @@ export async function generateWithGemini(
   const contents: any[] = buildHistoryContents(opts)
   contents.push({ role: 'user', parts: [{ text: prompt }] })
 
-  const hasTools = !!opts.tools && Object.keys(opts.tools).length > 0
+  // Merge local tools with MCP tools if provided
+  let mergedTools: ToolRegistry = { ...(opts.tools ?? {}) }
+  const mcp: McpClientAdapter | undefined = (opts as any)?.mcpClient
+  if (mcp) {
+    const mcpRegistry = await buildMcpToolRegistry(mcp)
+    mergedTools = { ...mergedTools, ...mcpRegistry }
+  }
+
+  const hasTools = !!mergedTools && Object.keys(mergedTools).length > 0
 
   if (hasTools && opts.tools) {
-    const functionDeclarations = Object.values(opts.tools).map((t) => ({
+    const functionDeclarations = Object.values(mergedTools).map((t) => ({
       name: t.name,
       description: t.description,
       parameters: t.parameters,
@@ -79,7 +114,7 @@ export async function generateWithGemini(
       contents,
       configProvider: buildRequestConfig,
       opts,
-      tools: opts.tools,
+      tools: mergedTools,
     })
     return result
   }

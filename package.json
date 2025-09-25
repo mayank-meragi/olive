@@ -16,6 +16,7 @@
   },
   "dependencies": {
     "@google/genai": "^1.19.0",
+    "@modelcontextprotocol/sdk": "^1.18.2",
     "@radix-ui/react-collapsible": "^1.1.12",
     "@radix-ui/react-popover": "^1.1.15",
     "@radix-ui/react-select": "^2.2.6",
