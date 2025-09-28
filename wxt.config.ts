@@ -9,6 +9,11 @@ export default defineConfig({
       "tabGroups",
       "https://generativelanguage.googleapis.com/*",
     ],
+    browser_specific_settings: {
+      gecko: {
+        id: "@olive.mking9999",
+      },
+    },
     host_permissions: ["<all_urls>"],
     // Firefox-native sidebar entry (shows under View → Sidebars)
     sidebar_action: {
