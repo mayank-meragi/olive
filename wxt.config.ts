@@ -9,6 +9,15 @@ export default defineConfig({
       "tabGroups",
       "https://generativelanguage.googleapis.com/*",
     ],
+    commands: {
+      _execute_sidebar_action: {
+        suggested_key: {
+          default: "Ctrl+Shift+X",
+          mac: "Command+Shift+X",
+        },
+        description: "Toggle Olive Sidebar",
+      },
+    },
     browser_specific_settings: {
       gecko: {
         id: "@olive.mking9999",
